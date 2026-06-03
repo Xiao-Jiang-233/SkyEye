@@ -77,11 +77,11 @@ def create_dataloaders(data_root=None, img_size=None, batch_size=None, num_worke
 
     train_loader = DataLoader(
         train_ds, batch_size=bs, shuffle=True,
-        num_workers=nw, pin_memory=True,
+        num_workers=nw, pin_memory=torch.cuda.is_available(),
     )
     val_loader = DataLoader(
         val_ds, batch_size=bs, shuffle=False,
-        num_workers=nw, pin_memory=True,
+        num_workers=nw, pin_memory=torch.cuda.is_available(),
     )
 
     print(f"Classes: {full_dataset.classes}")

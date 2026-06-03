@@ -13,12 +13,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 开发环境
 
+### Mo 平台（云端 Linux）
+
 - **运行时环境**: Python 3.9.5 | PyTorch 2.3.1 | CUDA (Mo 平台 GPU)
 - 开发方式：纯模块化 `.py` 文件 + `coding_here.ipynb` 作为入口调用
 - 模块结构：`config.py`（超参数）→ `data/`（加载+增强）→ `models/`（EfficientNet封装+蒸馏）→ `training/`（教师训练+蒸馏+剪枝微调）→ `inference/`（ONNX导出+INT8量化+CPU推理）→ `utils/`（指标+日志）
-- 操作系统：Linux（Mo 平台云端环境）
 - Python 包管理：`!pip install <package>`（在 Notebook cell 中直接运行）
 - 运行代码：`Shift + Enter`
+
+### 本地开发（Windows 11）
+
+- **运行时环境**: Python 3.9.x | PyTorch 2.3.1 | CPU（无 CUDA）
+- **虚拟环境**: `.venv/`（已在 `.gitignore` 中排除），通过 `pip install -r requirements.txt` 创建
+- 开发方式：纯模块化 `.py` 文件，通过 `scripts/local_train.py` CLI 运行
+- **Windows 特别说明**：
+  - `num_workers` 自动设为 `0`（`config.py` 中检测 `sys.platform`），避免 multiprocessing spawn 卡死
+  - `pin_memory` 自动检测 CUDA 可用性，CPU 上自动关闭
+  - 混合精度（`fp16`）仅在 CUDA 上生效，CPU 上自动跳过
+  - 数据集路径 `data_root` 需要根据本地实际情况修改（Mo 平台的 hash 路径在本地不存在）
 
 ## 目录结构
 
@@ -26,6 +38,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 |---|---|
 | `coding_here.ipynb` | Notebook 入口，分阶段调用各 .py 模块 |
 | `scripts/local_train.py` | 本地开发 CLI 脚本（分阶段运行训练管线） |
+| `scripts/run.sh` | Linux/macOS/Git Bash 快捷启动脚本 |
+| `scripts/run.bat` | Windows CMD 快捷启动脚本 |
+| `scripts/run.ps1` | Windows PowerShell 快捷启动脚本 |
 | `datasets/` | 导入的数据集，**只读**，需复制到其他目录才能修改 |
 | `results/` | 训练结果和模型检查点存放处 |
 | `results/tb_results/` | TensorBoard 日志存放处 |
@@ -49,7 +64,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 常用命令
 
-在 Notebook cell 中执行：
+### Mo 平台（Notebook cell 中执行）
 
 ```bash
 # 列出已安装的包
@@ -79,6 +94,37 @@ python scripts/local_train.py teacher   # 训练教师
 python scripts/local_train.py all       # 完整管线
 ```
 
+### 本地开发（Windows）
+
+```bash
+# 创建虚拟环境（首次）
+python -m venv .venv
+
+# 激活虚拟环境
+.venv\Scripts\activate        # CMD
+.venv\Scripts\Activate.ps1    # PowerShell
+source .venv/Scripts/activate # Git Bash
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 运行训练管线（三选一）
+bash scripts/run.sh check      # Git Bash
+scripts\run.bat check          # CMD
+.\scripts\run.ps1 check        # PowerShell
+
+# 或直接调用 Python
+python scripts/local_train.py check     # 检查环境
+python scripts/local_train.py teacher   # 训练教师（CPU 上会很慢）
+python scripts/local_train.py all       # 完整管线
+
+# 单张图片推理
+python -m inference.infer <image_path>
+```
+
+> ⚠️ **Windows 注意**：本地没有 GPU，训练极慢。建议仅在 Windows 上做代码开发和调试，
+> 实际训练在 Mo 平台 GPU 环境执行。`data_root` 路径需要根据本地数据集位置修改 `config.py`。
+
 ## 注意事项
 
 - 比赛约束：GPU 训练 + CPU 推理，总时限 70 分钟（epoch 已缩减适配）
@@ -86,7 +132,10 @@ python scripts/local_train.py all       # 完整管线
 - `datasets/` 目录是只读的，不可直接修改其中的文件
 - 运行 job 训练时，结果务必指定输出到 `results/` 目录
 - 项目部署需创建 `app_spec.yml` 定义输入输出接口
-- `.localenv/` 是本地虚拟环境目录（已在 `.gitignore` 中排除）
+- `.localenv/` 和 `.venv/` 是本地虚拟环境目录（已在 `.gitignore` 中排除）
+- **Windows**：`num_workers` 自动设为 0（`config.py` 检测 `sys.platform`），`pin_memory` 自动适配
+- **Windows**：`fp16` 混合精度仅在 CUDA 上生效，CPU 训练自动跳过
+- **Windows**：训练前需修改 `config.py` 中的 `data_root` 为本地数据集路径
 
 ## 核心依赖
 
@@ -102,3 +151,8 @@ python scripts/local_train.py all       # 完整管线
 
 ```bash
 torch==2.3.1  torchvision==0.18.1  timm==1.0.8  onnx==1.16.1  onnxruntime-gpu==1.18.1  tqdm  scikit-learn
+
+```
+
+> ⚠️ **Windows 本地**：无 GPU 时，将 `onnxruntime-gpu` 替换为 `onnxruntime`（CPU 版）。
+> PyTorch 默认安装 CPU-only 版本（`pip install torch==2.3.1` 在 Windows 上不包含 CUDA）。
