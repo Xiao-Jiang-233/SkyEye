@@ -9,8 +9,10 @@
 ## 技术方案
 
 ```text
-EfficientNet-B5 (Teacher) → Knowledge Distillation → EfficientNet-B0 (Student) → Structured Pruning → ONNX Export
+EfficientNet-B5 (Teacher) → Knowledge Distillation → EfficientNet-B0 (Student) → Structured Pruning → ONNX Export → INT8 Quantization → CPU Inference
 ```
+
+训练 GPU，推理 CPU。总时限 70 分钟。
 
 ## 运行环境
 
@@ -22,7 +24,7 @@ EfficientNet-B5 (Teacher) → Knowledge Distillation → EfficientNet-B0 (Studen
 | **timm** | 1.0.8 |
 | **onnx** | 1.16.1 |
 | **onnxruntime-gpu** | 1.18.1 |
-| **平台** | [Mo Platform](https://momodel.cn) (JupyterLab + GPU) |
+| **推理** | CPU（比赛评测环境） |
 
 ## 项目结构
 
@@ -41,7 +43,7 @@ SkyEye/
 │   ├── distill_student.py         # 知识蒸馏入口
 │   └── prune_finetune.py          # 结构化剪枝 + 渐进微调
 ├── inference/
-│   ├── export_onnx.py             # ONNX 导出 + 测速
+│   ├── export_onnx.py             # ONNX 导出 + INT8 量化 + CPU 测速
 │   └── infer.py                   # 单张/批量推理
 └── utils/
     ├── metrics.py                 # F1 / 混淆矩阵 / 分类报告
@@ -61,12 +63,13 @@ SkyEye/
 | sunny（晴天） | 10,000 |
 | thunder（雷暴） | 10,000 |
 
-## 训练流程
+## 训练流程（70 分钟 GPU 时限）
 
-1. **Train Teacher:** EfficientNet-B5, 30 epochs, FocalLoss
-2. **Knowledge Distillation:** B5 → B0, 40 epochs, T=4, α=0.7
-3. **Structured Pruning:** 渐进 3 轮 (15% → 27.5% → 40%) + Fine-tune
-4. **ONNX Export:** ONNX Runtime 推理
+1. **Train Teacher:** EfficientNet-B5, **10** epochs, FocalLoss (~30 min)
+2. **Knowledge Distillation:** B5 → B0, **15** epochs, T=4, α=0.7 (~15 min)
+3. **Structured Pruning:** 渐进 **2** 轮 (20% → 40%) + Fine-tune **5** epochs × 2 (~5 min)
+4. **ONNX Export + INT8 Quantization:** FP32 → INT8 动态量化 (~3 min)
+5. **CPU Inference:** ONNX Runtime CPUExecutionProvider
 
 ## 依赖安装
 
