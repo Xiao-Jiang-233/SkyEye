@@ -25,6 +25,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | 路径 | 用途 |
 |---|---|
 | `coding_here.ipynb` | Notebook 入口，分阶段调用各 .py 模块 |
+| `scripts/local_train.py` | 本地开发 CLI 脚本（分阶段运行训练管线） |
 | `datasets/` | 导入的数据集，**只读**，需复制到其他目录才能修改 |
 | `results/` | 训练结果和模型检查点存放处 |
 | `results/tb_results/` | TensorBoard 日志存放处 |
@@ -71,6 +72,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # 查看当前目录内容
 ls
+
+# 本地开发：分阶段运行训练管线
+python scripts/local_train.py check     # 检查环境
+python scripts/local_train.py teacher   # 训练教师
+python scripts/local_train.py all       # 完整管线
 ```
 
 ## 注意事项
