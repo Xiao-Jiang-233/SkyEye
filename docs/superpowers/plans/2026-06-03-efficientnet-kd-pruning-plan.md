@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 从零构建完整的天气分类管线：EfficientNet-B5 教师训练 → B0 知识蒸馏 → 结构化剪枝 → ONNX 导出
+**Goal:** 从零构建完整的天气分类管线：EfficientNet-B5 教师训练 → B0 知识蒸馏 → 结构化剪枝 → ONNX 导出 → INT8 量化 → CPU 推理
 
 **Architecture:** 纯模块化 .py 项目结构。config.py 统一管理超参数，data/ 处理数据加载增强，models/ 封装网络和蒸馏逻辑，training/ 实现三阶段训练流水线，inference/ 负责 ONNX 导出和推理。coding_here.ipynb 作为 Mo 平台入口分阶段调用各模块。
 

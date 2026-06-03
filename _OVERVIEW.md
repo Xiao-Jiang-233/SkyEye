@@ -24,7 +24,7 @@ EfficientNet-B5 (Teacher) → Knowledge Distillation → EfficientNet-B0 (Studen
 | **timm** | 1.0.8 |
 | **onnx** | 1.16.1 |
 | **onnxruntime-gpu** | 1.18.1 |
-| **推理** | CPU（比赛评测环境） |
+| **平台** | [Mo Platform](https://momodel.cn) (JupyterLab + GPU + CPU 推理) |
 
 ## 项目结构
 

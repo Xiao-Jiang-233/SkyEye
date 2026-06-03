@@ -28,7 +28,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `datasets/` | 导入的数据集，**只读**，需复制到其他目录才能修改 |
 | `results/` | 训练结果和模型检查点存放处 |
 | `results/tb_results/` | TensorBoard 日志存放处 |
-| `_OVERVIEW.md` | 项目介绍（待填写） |
+| `_OVERVIEW.md` | 项目介绍（功能、环境、结构、流程） |
 | `app_spec.yml` | 定义模型输入输出，用于部署服务（待创建） |
 
 ## 已导入的数据集
