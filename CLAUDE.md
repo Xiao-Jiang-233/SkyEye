@@ -31,11 +31,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 已导入的数据集
 
-`datasets/69f46e75dbb43ba9e05483c1-69e0f1d5638ba61f00d54c83/weather_classification/` — 6 类 × 各 10,000 张 = 共 60,000 张天气图片:
+`datasets/<hash>/weather_classification/` — 6 类 × 各 10,000 张 = 共 **60,000 张**天气图片，按类别分目录存放：
 
-- `cloudy/` (10,000), `haze/` (10,000), `rainy/` (10,000)
-- `snow/` (10,000) — 注意：目录名为 `snow`（非 `snowy`）
-- `sunny/` (10,000), `thunder/` (10,000)
+| 目录 | 数量 | 中文 |
+| --- | --- | --- |
+| `cloudy/` | 10,000 | 多云 |
+| `haze/` | 10,000 | 雾霾 |
+| `rainy/` | 10,000 | 雨天 |
+| `snow/` | 10,000 | 雪天 |
+| `sunny/` | 10,000 | 晴天 |
+| `thunder/` | 10,000 | 雷暴 |
+
+> ⚠️ 数据集中类别目录名为 `snow`（非 `snowy`），代码中统一使用 `snow`。
 
 ## 常用命令
 
