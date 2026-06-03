@@ -82,8 +82,15 @@ ls
 
 ## 核心依赖
 
-在 Notebook cell 中执行：
+目标环境：**Python 3.9.5 | PyTorch 2.3.1**
+
+在 Notebook cell 中执行（或直接用 `requirements.txt`）：
 
 ```bash
-!pip install torch==2.3.1 torchvision==0.18.1 timm==1.0.8 onnx==1.16.1 onnxruntime-gpu==1.18.1 tqdm scikit-learn
+!pip install -r requirements.txt
 ```
+
+版本清单：
+
+```bash
+torch==2.3.1  torchvision==0.18.1  timm==1.0.8  onnx==1.16.1  onnxruntime-gpu==1.18.1  tqdm  scikit-learn

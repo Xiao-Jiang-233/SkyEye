@@ -71,5 +71,5 @@ SkyEye/
 ## 依赖安装
 
 ```bash
-pip install torch==2.3.1 torchvision==0.18.1 timm==1.0.8 onnx==1.16.1 onnxruntime-gpu==1.18.1 tqdm scikit-learn
+pip install -r requirements.txt
 ```
