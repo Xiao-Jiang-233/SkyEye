@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 这是一个 [Mo 平台](https://momodel.cn) 上的机器学习项目。Mo 平台是一个内嵌 JupyterLab 的在线 IDE，支持 GPU 训练和模型部署。
 
-项目名：**SkyEye**，六类天气图片分类任务（cloudy, haze, rainy, snow, sunny, thunder）。
+项目名：**SkyEye**，六类天气图片分类任务（cloudy, foggy, rainy, snowy, sunny, thundery）。
 技术方案：EfficientNet-B5（教师）→ 知识蒸馏 → EfficientNet-B0（学生）→ 结构化剪枝 → ONNX 导出 → INT8 量化。
 比赛约束：GPU 训练 → CPU 推理，总时限 70 分钟。
 设计文档：`docs/superpowers/specs/2026-06-03-efficientnet-kd-pruning-design.md`
@@ -123,6 +123,9 @@ ls
 # 本地开发：分阶段运行训练管线
 python scripts/local_train.py check     # 检查环境
 python scripts/local_train.py teacher   # 训练教师
+python scripts/local_train.py distill   # 仅知识蒸馏
+python scripts/local_train.py prune     # 仅剪枝 + 微调
+python scripts/local_train.py export    # 仅 ONNX 导出 + 量化 + 测速
 python scripts/local_train.py all       # 完整管线
 ```
 
@@ -148,6 +151,9 @@ scripts\run.bat check          # CMD
 # 或直接调用 Python
 python scripts/local_train.py check     # 检查环境
 python scripts/local_train.py teacher   # 训练教师（CPU 上会很慢）
+python scripts/local_train.py distill   # 仅知识蒸馏
+python scripts/local_train.py prune     # 仅剪枝 + 微调
+python scripts/local_train.py export    # 仅 ONNX 导出 + 量化 + 测速
 python scripts/local_train.py all       # 完整管线
 
 # 单张图片推理
@@ -156,6 +162,7 @@ python -m inference.infer <image_path>
 
 > ⚠️ **Windows 注意**：本地没有 GPU，训练极慢。建议仅在 Windows 上做代码开发和调试，
 > 实际训练在 Mo 平台 GPU 环境执行。`data_root` 路径需要根据本地数据集位置修改 `config.py`。
+> 数据集自动合并到 `writable_root`（默认 `.data/weather/`），此目录在 `.gitignore` 中已排除。
 
 ## 注意事项
 
