@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 开发环境
 
+- **运行时环境**: Python 3.9.5 | PyTorch 2.3.1 | CUDA (Mo 平台 GPU)
 - 开发方式：纯模块化 `.py` 文件 + `coding_here.ipynb` 作为入口调用
 - 模块结构：`config.py`（超参数）→ `data/`（加载+增强）→ `models/`（EfficientNet封装+蒸馏）→ `training/`（教师训练+蒸馏+剪枝微调）→ `inference/`（ONNX导出+推理）→ `utils/`（指标+日志）
 - 操作系统：Linux（Mo 平台云端环境）
@@ -84,5 +85,5 @@ ls
 在 Notebook cell 中执行：
 
 ```bash
-!pip install torch torchvision timm onnx onnxruntime-gpu tqdm scikit-learn
+!pip install torch==2.3.1 torchvision==0.18.1 timm==1.0.8 onnx==1.16.1 onnxruntime-gpu==1.18.1 tqdm scikit-learn
 ```
