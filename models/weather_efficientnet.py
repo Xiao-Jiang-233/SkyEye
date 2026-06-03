@@ -14,12 +14,12 @@ class WeatherEfficientNet(nn.Module):
     用于知识蒸馏中的特征对齐。
 
     Args:
-        model_name: str — timm 模型名 (e.g. "efficientnet-b0", "efficientnet-b5")
+        model_name: str — timm 模型名 (e.g. "efficientnet_b0", "efficientnet_b5")
         num_classes: int — 分类类别数
         pretrained: bool — 是否加载 ImageNet 预训练权重
     """
 
-    def __init__(self, model_name="efficientnet-b0", num_classes=6, pretrained=True):
+    def __init__(self, model_name="efficientnet_b0", num_classes=6, pretrained=True):
         super().__init__()
         # 加载 timm EfficientNet，去掉分类头，保留空间特征
         self.backbone = timm.create_model(

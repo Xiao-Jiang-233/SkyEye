@@ -16,14 +16,14 @@ CONFIG = {
     "val_split": 0.15,             # 验证集比例
 
     # ---- 教师模型 ----
-    "teacher_model": "efficientnet-b5",  # timm 模型名
+    "teacher_model": "efficientnet_b5",  # timm 模型名
     "teacher_pretrained": True,
     "teacher_epochs": 30,
     "teacher_lr": 1e-3,
     "teacher_weight_decay": 1e-4,
 
     # ---- 知识蒸馏 ----
-    "student_model": "efficientnet-b0",  # timm 模型名
+    "student_model": "efficientnet_b0",  # timm 模型名
     "kd_temperature": 4.0,               # 蒸馏温度 T
     "kd_alpha": 0.7,                     # 软标签损失权重
     "kd_feature_weight": 0.1,            # 中间层特征损失权重
