@@ -12,10 +12,31 @@ _IS_WINDOWS = sys.platform == "win32"
 
 CONFIG = {
     # ---- 数据 ----
-    "data_root": "datasets/69f46e75dbb43ba9e05483c1-69e0f1d5638ba61f00d54c83/weather_classification",
-    "writable_root": ".data/weather",  # 将只读数据集复制到此可写目录
+    # 多数据集自动处理：
+    #   "auto" — 自动扫描 datasets/ 下所有导入，发现 weather_classification/ 或 .zip，
+    #            内置别名表自动映射类名差异，合并到 writable_root
+    #   列表 — 手动指定，每个条目可以是:
+    #           1. 字符串路径（类名需与 class_names 一致）
+    #           2. dict {path, class_map}（手动映射：foggy→haze, snowy→snow）
+    #   支持 .zip 文件（自动解压到临时目录）
+    "data_roots": "auto",
+    "writable_root": ".data/weather",  # 将只读数据集合并复制到此可写目录
+    # 类名别名表：自动发现时，将不同命名的类目录映射到标准 class_names（形容词）
+    "class_aliases": {
+        # foggy 的别名
+        "haze": "foggy",
+        "fog": "foggy",
+        # snowy 的别名
+        "snow": "snowy",
+        # rainy 的别名
+        "rain": "rainy",
+        # thundery 的别名
+        "thunder": "thundery",
+        "thunderstorm": "thundery",
+        "lightning": "thundery",
+    },
     "num_classes": 6,
-    "class_names": ["cloudy", "haze", "rainy", "snow", "sunny", "thunder"],
+    "class_names": ["cloudy", "foggy", "rainy", "snowy", "sunny", "thundery"],
     "img_size": 224,               # EfficientNet 标准输入
     "batch_size": 32,
     "val_split": 0.15,             # 验证集比例

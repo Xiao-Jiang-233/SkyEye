@@ -54,13 +54,45 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | 目录 | 数量 | 中文 |
 | --- | --- | --- |
 | `cloudy/` | 10,000 | 多云 |
-| `haze/` | 10,000 | 雾霾 |
+| `foggy/` | 10,000 | 雾霾 |
 | `rainy/` | 10,000 | 雨天 |
-| `snow/` | 10,000 | 雪天 |
+| `snowy/` | 10,000 | 雪天 |
 | `sunny/` | 10,000 | 晴天 |
-| `thunder/` | 10,000 | 雷暴 |
+| `thundery/` | 10,000 | 雷暴 |
 
-> ⚠️ 数据集中类别目录名为 `snow`（非 `snowy`），代码中统一使用 `snow`。
+> ⚠️ 类名统一使用形容词形式（cloudy/foggy/rainy/snowy/sunny/thundery），
+> 数据集中 `haze`、`snow`、`thunder` 等名词变体通过 `class_aliases` 自动映射。
+
+### 多数据集合并
+
+`config.py` 中 `data_roots` 支持三种模式，`prepare_data()` 自动合并到 `writable_root`。
+
+**① auto 模式（推荐）**：自动扫描 `datasets/` 下所有导入，发现 `weather_classification/` 或 `.zip`，用 `class_aliases` 自动映射类名差异（`haze→foggy`，`snow→snowy`，`thunder→thundery`）：
+
+```python
+"data_roots": "auto",
+"class_aliases": {
+    "haze": "foggy", "fog": "foggy",
+    "snow": "snowy", "rain": "rainy",
+    "thunder": "thundery", "thunderstorm": "thundery", "lightning": "thundery",
+},
+```
+
+**② 列表模式（手动）**：精确控制每个数据源：
+
+```python
+"data_roots": [
+    "datasets/<hash1>/weather_classification",
+    {"path": "datasets/<hash2>/data_split.zip", "class_map": {"haze": "foggy", "snow": "snowy"}},
+],
+```
+
+**③ 旧版兼容**：仍支持 `"data_root": "..."` 单路径。
+
+合并特性：
+- 逐类逐文件复制，同名跳过（保留先导入的），自动处理 `datasets/` 只读限制
+- `.zip` 自动解压，识别单层壳目录；类名自动匹配（精确 → 别名 → 模糊）
+- 无法匹配的类别自动跳过并警告；缺失数据源自动跳过
 
 ## 常用命令
 
@@ -128,7 +160,7 @@ python -m inference.infer <image_path>
 ## 注意事项
 
 - 比赛约束：GPU 训练 + CPU 推理，总时限 70 分钟（epoch 已缩减适配）
-- `snow` 类别：数据集中目录名为 `snow`，代码中统一使用 `snow`（非 `snowy`）
+- 类名统一使用形容词：数据集目录可能用名词（`haze`, `snow`, `thunder`），`class_aliases` 自动映射到 `foggy`, `snowy`, `thundery`
 - `datasets/` 目录是只读的，不可直接修改其中的文件
 - 运行 job 训练时，结果务必指定输出到 `results/` 目录
 - 项目部署需创建 `app_spec.yml` 定义输入输出接口
