@@ -6,11 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 这是一个 [Mo 平台](https://momodel.cn) 上的机器学习项目。Mo 平台是一个内嵌 JupyterLab 的在线 IDE，支持 GPU 训练和模型部署。
 
-项目名：**SkyEye**，目前处于初始模板状态（仅包含平台自动生成的样板文件），推测目标为天气分类相关任务。
+项目名：**SkyEye**，六类天气图片分类任务（cloudy, haze, rainy, snow, sunny, thunder）。
+技术方案：EfficientNet-B5（教师）→ 知识蒸馏 → EfficientNet-B0（学生）→ 结构化剪枝 → ONNX 导出。
+设计文档：`docs/superpowers/specs/2026-06-03-efficientnet-kd-pruning-design.md`
 
 ## 开发环境
 
-- 主要开发文件：`coding_here.ipynb`（Jupyter Notebook）
+- 开发方式：纯模块化 `.py` 文件 + `coding_here.ipynb` 作为入口调用
+- 模块结构：`config.py`（超参数）→ `data/`（加载+增强）→ `models/`（EfficientNet封装+蒸馏）→ `training/`（教师训练+蒸馏+剪枝微调）→ `inference/`（ONNX导出+推理）→ `utils/`（指标+日志）
 - 操作系统：Linux（Mo 平台云端环境）
 - Python 包管理：`!pip install <package>`（在 Notebook cell 中直接运行）
 - 运行代码：`Shift + Enter`
@@ -19,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | 路径 | 用途 |
 |---|---|
-| `coding_here.ipynb` | 主开发笔记本，所有代码在此编写 |
+| `coding_here.ipynb` | Notebook 入口，分阶段调用各 .py 模块 |
 | `datasets/` | 导入的数据集，**只读**，需复制到其他目录才能修改 |
 | `results/` | 训练结果和模型检查点存放处 |
 | `results/tb_results/` | TensorBoard 日志存放处 |
@@ -28,7 +31,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 已导入的数据集
 
-`datasets/69f46e75dbb43ba9e05483c1-69e0f1d5638ba61f00d54c83/weather_classification/thunder/` — 包含约 1,728 张雷电天气图片（thunder_00000.jpg 到 thunder_01727.jpg），用于天气分类任务。
+`datasets/69f46e75dbb43ba9e05483c1-69e0f1d5638ba61f00d54c83/weather_classification/` — 6 类 × 各 10,000 张 = 共 60,000 张天气图片:
+
+- `cloudy/` (10,000), `haze/` (10,000), `rainy/` (10,000)
+- `snow/` (10,000) — 注意：目录名为 `snow`（非 `snowy`）
+- `sunny/` (10,000), `thunder/` (10,000)
 
 ## 常用命令
 
@@ -59,7 +66,16 @@ ls
 
 ## 注意事项
 
+- `snow` 类别：数据集中目录名为 `snow`，代码中统一使用 `snow`（非 `snowy`）
 - `datasets/` 目录是只读的，不可直接修改其中的文件
 - 运行 job 训练时，结果务必指定输出到 `results/` 目录
 - 项目部署需创建 `app_spec.yml` 定义输入输出接口
 - `.localenv/` 是本地虚拟环境目录（已在 `.gitignore` 中排除）
+
+## 核心依赖
+
+在 Notebook cell 中执行：
+
+```bash
+!pip install torch torchvision timm onnx onnxruntime-gpu tqdm scikit-learn
+```
