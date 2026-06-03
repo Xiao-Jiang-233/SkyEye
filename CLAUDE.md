@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Mo 平台（云端 Linux）
 
 - **运行时环境**: Python 3.9.5 | PyTorch 2.3.1 | CUDA (Mo 平台 GPU)
-- 开发方式：纯模块化 `.py` 文件 + `coding_here.ipynb` 作为入口调用
+- 开发方式：纯模块化 `.py` 文件 + `main.ipynb` 作为入口调用，`prepare_datasets.ipynb` 备用
 - 模块结构：`config.py`（超参数）→ `data/`（加载+增强）→ `models/`（EfficientNet封装+蒸馏）→ `training/`（教师训练+蒸馏+剪枝微调）→ `inference/`（ONNX导出+INT8量化+CPU推理）→ `utils/`（指标+日志）
 - Python 包管理：`!pip install <package>`（在 Notebook cell 中直接运行）
 - 运行代码：`Shift + Enter`
@@ -36,7 +36,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | 路径 | 用途 |
 |---|---|
-| `coding_here.ipynb` | Notebook 入口，分阶段调用各 .py 模块 |
+| `main.ipynb` | Notebook 入口，分阶段调用各 .py 模块（使用 `!cp -R` / `!7zx` 预处理数据） |
+| `prepare_datasets.ipynb` | 数据集准备（备用），日常训练直接用 `main.ipynb` |
 | `scripts/local_train.py` | 本地开发 CLI 脚本（分阶段运行训练管线） |
 | `scripts/run.sh` | Linux/macOS/Git Bash 快捷启动脚本 |
 | `scripts/run.bat` | Windows CMD 快捷启动脚本 |

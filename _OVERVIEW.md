@@ -30,7 +30,8 @@ EfficientNet-B5 (Teacher) → Knowledge Distillation → EfficientNet-B0 (Studen
 
 ```text
 SkyEye/
-├── coding_here.ipynb              # Notebook 入口，分阶段调用
+├── main.ipynb                     # Notebook 入口，使用 !cp -R / !7zx 预处理数据
+├── prepare_datasets.ipynb         # 数据集准备（备用）
 ├── config.py                      # 超参数统一管理
 ├── data/
 │   ├── augmentations.py           # Train/Val 增强策略
