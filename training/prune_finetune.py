@@ -1,0 +1,236 @@
+# ============ training/prune_finetune.py ============
+"""
+结构化剪枝 + 渐进微调
+
+策略：
+1. 对 MBConv 中 1×1 点卷积进行 L2-norm 通道剪枝
+2. 渐进式 3 轮剪枝（15% → 27.5% → 40%），每轮后微调恢复精度
+3. 最终固化 mask 生成密集小模型
+输出：results/student_pruned_final.pth
+"""
+import torch
+import torch.nn as nn
+import torch.nn.utils.prune as prune
+import torch.optim as optim
+from torch.cuda.amp import GradScaler, autocast
+import numpy as np
+from tqdm import tqdm
+from sklearn.metrics import f1_score
+
+from config import CONFIG
+from models.weather_efficientnet import WeatherEfficientNet
+from data.dataset import create_dataloaders, compute_class_weights
+from training.train_teacher import FocalLoss
+
+
+class StructuredPruner:
+    """
+    EfficientNet 结构化通道剪枝器
+
+    只剪枝 MBConv 中的 1×1 点卷积层（通道操作核心），
+    跳过输入层（≤32 channels）和深度可分离卷积。
+
+    Args:
+        model: WeatherEfficientNet
+        prune_ratio: float — 剪枝比例
+        method: str — 'l2' / 'l1'
+    """
+
+    def __init__(self, model, prune_ratio=0.4, method='l2'):
+        self.model = model
+        self.prune_ratio = prune_ratio
+        self.method = method
+        self.pruned_params = []
+
+    def apply_pruning(self):
+        """对所有 1×1 点卷积应用结构化剪枝"""
+        for name, module in self.model.named_modules():
+            if isinstance(module, nn.Conv2d) and module.kernel_size == (1, 1):
+                # 跳过输入层和输出层附近的小通道卷积
+                if module.in_channels <= 32 or module.out_channels <= 32:
+                    continue
+
+                norm_type = 2 if self.method == 'l2' else 1
+                prune.ln_structured(
+                    module,
+                    name='weight',
+                    amount=self.prune_ratio,
+                    n=norm_type,
+                    dim=0,  # 剪输出通道
+                )
+                self.pruned_params.append((name, 'output_channels'))
+
+        self._print_stats()
+
+    def _print_stats(self):
+        """打印剪枝统计"""
+        total_weights = 0
+        zero_weights = 0
+        for name, module in self.model.named_modules():
+            if isinstance(module, nn.Conv2d) and hasattr(module, 'weight_mask'):
+                total_weights += module.weight_mask.numel()
+                zero_weights += (module.weight_mask == 0).sum().item()
+
+        sparsity = zero_weights / total_weights * 100 if total_weights > 0 else 0
+        print(f"\n{'='*50}")
+        print(f"Pruning Statistics:")
+        print(f"  Total weighted params: {total_weights:,}")
+        print(f"  Zero (pruned) params:  {zero_weights:,}")
+        print(f"  Structured Sparsity:   {sparsity:.2f}%")
+        print(f"  Layers pruned:         {len(self.pruned_params)}")
+        print(f"{'='*50}\n")
+
+    def make_permanent(self):
+        """将 mask 固化到权重中"""
+        for name, module in self.model.named_modules():
+            if isinstance(module, nn.Conv2d) and hasattr(module, 'weight_mask'):
+                prune.remove(module, 'weight')
+
+
+def finetune_after_prune(model, train_loader, val_loader, device, cfg, epochs, lr, tag=""):
+    """
+    剪枝后微调：仅更新未剪枝的权重
+
+    Args:
+        model: 已剪枝的模型
+        train_loader: DataLoader
+        val_loader: DataLoader
+        device: torch.device
+        cfg: dict
+        epochs: int
+        lr: float
+        tag: str — 日志标签
+
+    Returns:
+        nn.Module: 微调后的模型
+    """
+    # 计算类别权重
+    class_counts = np.zeros(cfg["num_classes"])
+    for _, labels in train_loader:
+        for lbl in labels.numpy():
+            class_counts[lbl] += 1
+
+    alpha = compute_class_weights(class_counts)
+    criterion = FocalLoss(alpha=alpha, gamma=cfg["focal_gamma"])
+
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-5)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    scaler = GradScaler(enabled=cfg["fp16"])
+
+    ckpt_path = f"results/student_pruned_{tag}.pth" if tag else "results/student_pruned_temp.pth"
+    best_f1 = 0.0
+
+    for epoch in range(epochs):
+        model.train()
+        train_loss = 0.0
+        for images, labels in tqdm(train_loader, desc=f"{tag} FT Epoch {epoch+1}/{epochs}"):
+            images, labels = images.to(device), labels.to(device)
+            optimizer.zero_grad()
+            with autocast(enabled=cfg["fp16"]):
+                loss = criterion(model(images), labels)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+            train_loss += loss.item()
+
+        scheduler.step()
+
+        # Validate
+        model.eval()
+        all_preds, all_labels = [], []
+        for images, labels in val_loader:
+            images = images.to(device)
+            logits = model(images)
+            preds = logits.argmax(dim=1).cpu().numpy()
+            all_preds.extend(preds)
+            all_labels.extend(labels.numpy())
+
+        f1 = f1_score(all_labels, all_preds, average='macro')
+        acc = (np.array(all_preds) == np.array(all_labels)).mean() * 100
+        print(f"  [{tag}] Epoch {epoch+1}: F1={f1:.4f}, Acc={acc:.2f}%")
+
+        if f1 > best_f1:
+            best_f1 = f1
+            torch.save(model.state_dict(), ckpt_path)
+
+    model.load_state_dict(torch.load(ckpt_path))
+    return model
+
+
+def prune_and_finetune():
+    """
+    完整剪枝 + 渐进微调流水线
+
+    流程：加载蒸馏模型 → 3 轮渐进剪枝 → 最终微调 → 固化
+    """
+    cfg = CONFIG
+    device = torch.device(cfg["device"])
+    print(f"Using device: {device}")
+
+    # 1) 创建学生模型并加载蒸馏权重
+    student = WeatherEfficientNet(
+        model_name=cfg["student_model"],
+        num_classes=cfg["num_classes"],
+        pretrained=False,
+    ).to(device)
+    student.load_state_dict(torch.load(cfg["distilled_ckpt"]))
+    print(f"Distilled student loaded from {cfg['distilled_ckpt']}")
+
+    # 2) 数据加载
+    train_loader, val_loader, _ = create_dataloaders()
+
+    # 3) 渐进式剪枝
+    ratios = np.linspace(0.15, cfg["prune_ratio"], cfg["prune_iterations"])
+
+    for i, ratio in enumerate(ratios):
+        print(f"\n{'#'*50}")
+        print(f"# Pruning Iteration {i+1}/{cfg['prune_iterations']} (ratio={ratio:.2%})")
+        print(f"{'#'*50}")
+
+        pruner = StructuredPruner(student, prune_ratio=ratio, method='l2')
+        pruner.apply_pruning()
+
+        student = finetune_after_prune(
+            student, train_loader, val_loader, device, cfg,
+            epochs=cfg["prune_finetune_epochs"],
+            lr=cfg["prune_finetune_lr"],
+            tag=f"iter{i+1}",
+        )
+
+    # 4) 固化剪枝
+    final_pruner = StructuredPruner(student, prune_ratio=0, method='l2')
+    final_pruner.make_permanent()
+    print("✓ Pruning masks merged into weights (permanent)")
+
+    # 5) 最终微调
+    print("\nFinal fine-tuning...")
+    student = finetune_after_prune(
+        student, train_loader, val_loader, device, cfg,
+        epochs=cfg["prune_finetune_epochs"],
+        lr=cfg["prune_finetune_lr"] * 0.5,
+        tag="final",
+    )
+
+    # 6) 保存最终模型
+    torch.save(student.state_dict(), cfg["pruned_ckpt"])
+    print(f"✓ Final pruned model saved to {cfg['pruned_ckpt']}")
+
+    # 7) 压缩率对比
+    import timm
+    original = timm.create_model(cfg["student_model"], pretrained=False, num_classes=cfg["num_classes"])
+    orig_params = sum(p.numel() for p in original.parameters())
+    pruned_params = sum(p.numel() for p in student.parameters())
+
+    print(f"\n{'='*50}")
+    print(f"Compression Summary:")
+    print(f"  Original params:  {orig_params:>12,}")
+    print(f"  Pruned params:    {pruned_params:>12,}")
+    print(f"  Compression:      {pruned_params/orig_params*100:.1f}%")
+    print(f"  Reduction:        {(1-pruned_params/orig_params)*100:.1f}%")
+    print(f"{'='*50}")
+
+    return student
+
+
+if __name__ == "__main__":
+    prune_and_finetune()
