@@ -26,7 +26,7 @@ def run_distillation():
         num_classes=cfg["num_classes"],
         pretrained=False,  # 使用自己训练的权重
     ).to(device)
-    teacher.load_state_dict(torch.load(cfg["teacher_ckpt"]))
+    teacher.load_state_dict(torch.load(cfg["teacher_ckpt"], weights_only=False))
     teacher.eval()
     print("Teacher model loaded and frozen.")
 

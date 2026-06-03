@@ -15,6 +15,10 @@
 """
 import sys
 import time
+from pathlib import Path
+
+# 确保项目根目录在 Python 搜索路径中（解决从不同目录运行时找不到 config 模块的问题）
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 def stage_check():
@@ -30,7 +34,7 @@ def stage_check():
     print(f"CUDA:         {torch.cuda.is_available()}")
     if torch.cuda.is_available():
         print(f"GPU:          {torch.cuda.get_device_name(0)}")
-        print(f"GPU Memory:   {torch.cuda.get_device_properties(0).total_mem/1e9:.1f} GB")
+        print(f"GPU Memory:   {torch.cuda.get_device_properties(0).total_memory/1e9:.1f} GB")
     print(f"Model:        Teacher={CONFIG['teacher_model']}, Student={CONFIG['student_model']}")
     print(f"Classes:      {CONFIG['class_names']}")
     print(f"Image size:   {CONFIG['img_size']}")

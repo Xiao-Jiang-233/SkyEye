@@ -29,7 +29,7 @@ def load_model(model_path=None, device=None):
         num_classes=cfg["num_classes"],
         pretrained=False,
     )
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
     model.to(device)
     model.eval()
 

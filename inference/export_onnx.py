@@ -35,7 +35,7 @@ def export_to_onnx(model_path, onnx_path=None):
         num_classes=cfg["num_classes"],
         pretrained=False,
     ).to(device)
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
     model.eval()
 
     dummy_input = torch.randn(1, 3, cfg["img_size"], cfg["img_size"]).to(device)

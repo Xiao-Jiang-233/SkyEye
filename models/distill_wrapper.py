@@ -210,7 +210,7 @@ class DistillationTrainer:
                 print(f"  ✓ Best distilled student saved! F1={best_f1:.4f}")
 
         # 加载最佳权重
-        self.student.load_state_dict(torch.load(self.cfg["distilled_ckpt"]))
+        self.student.load_state_dict(torch.load(self.cfg["distilled_ckpt"], weights_only=False))
         return self.student
 
     @torch.no_grad()

@@ -140,7 +140,7 @@ def train_teacher():
     print(f"\nTeacher training done. Best F1: {best_f1:.4f}")
 
     # 加载最佳权重
-    teacher.load_state_dict(torch.load(cfg["teacher_ckpt"]))
+    teacher.load_state_dict(torch.load(cfg["teacher_ckpt"], weights_only=False))
     return teacher
 
 

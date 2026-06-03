@@ -153,7 +153,7 @@ def finetune_after_prune(model, train_loader, val_loader, device, cfg, epochs, l
             best_f1 = f1
             torch.save(model.state_dict(), ckpt_path)
 
-    model.load_state_dict(torch.load(ckpt_path))
+    model.load_state_dict(torch.load(ckpt_path, weights_only=False))
     return model
 
 
@@ -173,7 +173,7 @@ def prune_and_finetune():
         num_classes=cfg["num_classes"],
         pretrained=False,
     ).to(device)
-    student.load_state_dict(torch.load(cfg["distilled_ckpt"]))
+    student.load_state_dict(torch.load(cfg["distilled_ckpt"], weights_only=False))
     print(f"Distilled student loaded from {cfg['distilled_ckpt']}")
 
     # 2) 数据加载
