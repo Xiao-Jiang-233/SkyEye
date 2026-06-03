@@ -1,8 +1,9 @@
 # ============ inference/export_onnx.py ============
 """
-ONNX 模型导出 + 图简化 + PyTorch vs ONNX Runtime 推理测速
+ONNX 模型导出 + INT8 量化 + CPU 推理测速
 
-输出：results/weather_model.onnx
+流程：PyTorch → ONNX FP32 → INT8 动态量化 → CPU Benchmark
+输出：results/weather_model.onnx, results/weather_model_int8.onnx
 """
 import torch
 import onnx
@@ -16,7 +17,7 @@ from models.weather_efficientnet import WeatherEfficientNet
 
 def export_to_onnx(model_path, onnx_path=None):
     """
-    将 PyTorch 模型导出为 ONNX 格式
+    将 PyTorch 模型导出为 ONNX FP32 格式
 
     Args:
         model_path: str — .pth 权重文件路径
@@ -26,10 +27,9 @@ def export_to_onnx(model_path, onnx_path=None):
         str: ONNX 文件路径
     """
     cfg = CONFIG
-    device = torch.device(cfg["device"])
+    device = torch.device("cpu")  # 导出时用 CPU，避免 CUDA 图捕获问题
     onnx_path = onnx_path or cfg["onnx_path"]
 
-    # 加载模型
     model = WeatherEfficientNet(
         model_name=cfg["student_model"],
         num_classes=cfg["num_classes"],
@@ -38,10 +38,8 @@ def export_to_onnx(model_path, onnx_path=None):
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
 
-    # 创建 dummy input
     dummy_input = torch.randn(1, 3, cfg["img_size"], cfg["img_size"]).to(device)
 
-    # 导出 ONNX
     torch.onnx.export(
         model,
         dummy_input,
@@ -57,94 +55,117 @@ def export_to_onnx(model_path, onnx_path=None):
         },
     )
 
-    # 验证 ONNX 模型
     onnx_model = onnx.load(onnx_path)
     onnx.checker.check_model(onnx_model)
-    print(f"✓ ONNX model exported and validated: {onnx_path}")
+    print(f"✓ ONNX model exported: {onnx_path}")
 
-    # 尝试简化图结构
+    # 简化图结构（可选）
     try:
         import onnxsim
         model_simp, check = onnxsim.simplify(onnx_path)
         if check:
             onnx.save(model_simp, onnx_path)
             print("✓ ONNX model simplified")
-        else:
-            print("! onnxsim simplification check failed, keeping original")
     except ImportError:
-        print("! onnxsim not installed, skipping simplification (pip install onnxsim)")
+        pass
 
     return onnx_path
 
 
-def benchmark_inference(model_path, onnx_path=None):
+def quantize_to_int8(onnx_path=None, int8_path=None):
     """
-    对比 PyTorch 原生 vs ONNX Runtime 推理速度
+    对 FP32 ONNX 模型进行 INT8 动态量化（CPU 推理加速 2-4×）
 
     Args:
-        model_path: str — .pth 权重文件
-        onnx_path: str — .onnx 文件（如已有则跳过导出）
+        onnx_path: str — FP32 ONNX 路径
+        int8_path: str — INT8 ONNX 输出路径
+
+    Returns:
+        str: INT8 ONNX 文件路径
+    """
+    from onnxruntime.quantization import quantize_dynamic, QuantType
+
+    cfg = CONFIG
+    onnx_path = onnx_path or cfg["onnx_path"]
+    int8_path = int8_path or cfg["onnx_int8_path"]
+
+    print("Quantizing to INT8 ...")
+    quantize_dynamic(
+        model_input=onnx_path,
+        model_output=int8_path,
+        weight_type=QuantType.QInt8,
+    )
+    print(f"✓ INT8 model saved: {int8_path}")
+
+    # 打印压缩效果
+    import os
+    fp32_size = os.path.getsize(onnx_path) / 1024 / 1024
+    int8_size = os.path.getsize(int8_path) / 1024 / 1024
+    print(f"  FP32 size: {fp32_size:.1f} MB → INT8 size: {int8_size:.1f} MB ({int8_size/fp32_size*100:.0f}%)")
+
+    return int8_path
+
+
+def benchmark_cpu(onnx_path=None, int8_path=None, warmup=20, runs=100):
+    """
+    CPU 推理测速：对比 ONNX FP32 vs INT8
+
+    Args:
+        onnx_path: str — FP32 ONNX 路径
+        int8_path: str — INT8 ONNX 路径
+        warmup: int — 预热次数
+        runs: int — 测量次数
+
+    Returns:
+        dict: {fp32_ms, int8_ms, speedup}
     """
     cfg = CONFIG
-    device = torch.device(cfg["device"])
+    onnx_path = onnx_path or cfg["onnx_path"]
+    int8_path = int8_path or cfg["onnx_int8_path"]
 
-    # --- PyTorch Inference ---
-    model = WeatherEfficientNet(
-        model_name=cfg["student_model"],
-        num_classes=cfg["num_classes"],
-        pretrained=False,
-    ).to(device)
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.eval()
+    dummy = np.random.randn(1, 3, cfg["img_size"], cfg["img_size"]).astype(np.float32)
+    providers = ['CPUExecutionProvider']
+    results = {}
 
-    dummy = torch.randn(1, 3, cfg["img_size"], cfg["img_size"]).to(device)
+    # --- FP32 ---
+    session_fp32 = ort.InferenceSession(onnx_path, providers=providers)
+    for _ in range(warmup):
+        _ = session_fp32.run(None, {'input': dummy})
 
-    # Warmup
-    for _ in range(20):
-        _ = model(dummy)
-
-    # Benchmark
-    torch_times = []
-    with torch.no_grad():
-        for _ in range(100):
-            start = time.perf_counter()
-            _ = model(dummy)
-            if device.type == 'cuda':
-                torch.cuda.synchronize()
-            torch_times.append(time.perf_counter() - start)
-
-    torch_avg = np.mean(torch_times) * 1000  # ms
-    torch_std = np.std(torch_times) * 1000
-    print(f"PyTorch inference: {torch_avg:.3f} ± {torch_std:.3f} ms")
-
-    # --- ONNX Runtime Inference ---
-    if onnx_path is None:
-        onnx_path = cfg["onnx_path"]
-
-    providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if device.type == 'cuda' else ['CPUExecutionProvider']
-    session = ort.InferenceSession(onnx_path, providers=providers)
-    dummy_np = dummy.cpu().numpy()
-
-    # Warmup
-    for _ in range(20):
-        _ = session.run(None, {'input': dummy_np})
-
-    # Benchmark
-    onnx_times = []
-    for _ in range(100):
+    times = []
+    for _ in range(runs):
         start = time.perf_counter()
-        _ = session.run(None, {'input': dummy_np})
-        onnx_times.append(time.perf_counter() - start)
+        _ = session_fp32.run(None, {'input': dummy})
+        times.append(time.perf_counter() - start)
 
-    onnx_avg = np.mean(onnx_times) * 1000
-    onnx_std = np.std(onnx_times) * 1000
-    speedup = torch_avg / onnx_avg
-    print(f"ONNX Runtime inference: {onnx_avg:.3f} ± {onnx_std:.3f} ms")
-    print(f"Speedup: {speedup:.2f}×")
+    fp32_ms = np.mean(times) * 1000
+    fp32_std = np.std(times) * 1000
+    print(f"ONNX FP32 (CPU): {fp32_ms:.2f} ± {fp32_std:.2f} ms")
+    results["fp32_ms"] = fp32_ms
 
-    return {"torch_ms": torch_avg, "onnx_ms": onnx_avg, "speedup": speedup}
+    # --- INT8 ---
+    if int8_path:
+        session_int8 = ort.InferenceSession(int8_path, providers=providers)
+        for _ in range(warmup):
+            _ = session_int8.run(None, {'input': dummy})
+
+        times = []
+        for _ in range(runs):
+            start = time.perf_counter()
+            _ = session_int8.run(None, {'input': dummy})
+            times.append(time.perf_counter() - start)
+
+        int8_ms = np.mean(times) * 1000
+        int8_std = np.std(times) * 1000
+        speedup = fp32_ms / int8_ms
+        print(f"ONNX INT8 (CPU): {int8_ms:.2f} ± {int8_std:.2f} ms  (Speedup: {speedup:.2f}×)")
+        results["int8_ms"] = int8_ms
+        results["speedup"] = speedup
+
+    return results
 
 
 if __name__ == "__main__":
     onnx_path = export_to_onnx(CONFIG["pruned_ckpt"])
-    benchmark_inference(CONFIG["pruned_ckpt"], onnx_path)
+    int8_path = quantize_to_int8(onnx_path)
+    benchmark_cpu(onnx_path, int8_path)

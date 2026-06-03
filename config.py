@@ -18,7 +18,7 @@ CONFIG = {
     # ---- 教师模型 ----
     "teacher_model": "efficientnet_b5",  # timm 模型名
     "teacher_pretrained": True,
-    "teacher_epochs": 30,
+    "teacher_epochs": 10,            # 70分钟时限下缩减至10轮
     "teacher_lr": 1e-3,
     "teacher_weight_decay": 1e-4,
 
@@ -27,14 +27,14 @@ CONFIG = {
     "kd_temperature": 4.0,               # 蒸馏温度 T
     "kd_alpha": 0.7,                     # 软标签损失权重
     "kd_feature_weight": 0.1,            # 中间层特征损失权重
-    "kd_epochs": 40,
+    "kd_epochs": 15,                     # 70分钟时限下缩减至15轮
     "kd_lr": 1e-3,
 
     # ---- 结构化剪枝 ----
     "prune_ratio": 0.4,           # 最终剪枝比例
-    "prune_iterations": 3,        # 渐进剪枝轮数
-    "prune_finetune_epochs": 15,  # 剪枝后微调轮数
-    "prune_finetune_lr": 1e-4,    # 微调学习率（比训练时更低）
+    "prune_iterations": 2,        # 渐进剪枝轮数（2轮: 20%→40%）
+    "prune_finetune_epochs": 5,   # 剪枝后微调轮数（70分钟内缩减）
+    "prune_finetune_lr": 1e-4,
 
     # ---- 通用 ----
     "device": "cuda" if torch.cuda.is_available() else "cpu",
@@ -46,9 +46,14 @@ CONFIG = {
     "use_focal_loss": True,       # 处理类别不平衡
     "focal_gamma": 2.0,
 
+    # ---- 推理 ----
+    "inference_device": "cpu",           # 比赛评测用 CPU 推理
+    "use_int8_quantization": True,       # CPU 推理时启用 INT8 量化加速
+
     # ---- 路径 ----
     "teacher_ckpt": "results/teacher_best.pth",
     "distilled_ckpt": "results/student_distilled_best.pth",
     "pruned_ckpt": "results/student_pruned_final.pth",
     "onnx_path": "results/weather_model.onnx",
+    "onnx_int8_path": "results/weather_model_int8.onnx",
 }

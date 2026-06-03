@@ -22,7 +22,7 @@ def load_model(model_path=None, device=None):
     """
     cfg = CONFIG
     model_path = model_path or cfg["pruned_ckpt"]
-    device = device or cfg["device"]
+    device = device or cfg.get("inference_device", "cpu")
 
     model = WeatherEfficientNet(
         model_name=cfg["student_model"],
