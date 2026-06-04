@@ -124,6 +124,9 @@ class DistillationTrainer:
         Returns:
             Tensor: 特征 MSE 损失（取各 stage 均值）
         """
+        if len(self.proj_layers) == 0:
+            return 0.0  # 无投影层时跳过特征蒸馏
+
         feat_loss = 0.0
         for s_feat, t_feat, proj in zip(student_feats, teacher_feats, self.proj_layers):
             projected = proj(s_feat, t_feat.shape)

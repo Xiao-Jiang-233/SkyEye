@@ -93,21 +93,47 @@ class WeatherEfficientNet(nn.Module):
         """
         返回各 stage 的输出通道数，用于特征蒸馏时的投影层配置
 
+        优先使用 timm 内置的 feature_info（兼容各版本 timm），
+        回退到手动遍历 blocks 的 conv_pwl/conv_pw。
+
         Returns:
             list[int]: 各 stage 的输出通道数（去重后）
         """
+        # 优先使用 timm 内置元数据（timm 1.0.27+ features_only=False 时为 list）
+        if hasattr(self.backbone, 'feature_info') and self.backbone.feature_info:
+            info = self.backbone.feature_info
+            if hasattr(info, 'channels'):
+                return info.channels()
+            if isinstance(info, list) and 'num_chs' in info[0]:
+                channels = []
+                for entry in info:
+                    if entry['num_chs'] not in channels:
+                        channels.append(entry['num_chs'])
+                return channels
+
+        # 回退：手动遍历 blocks（兼容旧版 timm）
         channels = []
         prev_channels = None
 
         for block in self.backbone.blocks:
-            # MBConv 模块的点卷积输出通道
-            if hasattr(block, 'conv_pwl'):
-                ch = block.conv_pwl.out_channels
-            elif hasattr(block, 'conv_pw'):
-                ch = block.conv_pw.out_channels
+            ch = None
+            # timm 1.0.27 中 blocks 是 Sequential，需进入内部找 DepthwiseSeparableConv
+            if hasattr(block, '__iter__') and not hasattr(block, 'conv_pwl'):
+                for inner in block:
+                    if hasattr(inner, 'conv_pwl'):
+                        ch = inner.conv_pwl.out_channels
+                    elif hasattr(inner, 'conv_pw'):
+                        ch = inner.conv_pw.out_channels
+                    if ch is not None:
+                        break
             else:
-                continue
+                if hasattr(block, 'conv_pwl'):
+                    ch = block.conv_pwl.out_channels
+                elif hasattr(block, 'conv_pw'):
+                    ch = block.conv_pw.out_channels
 
+            if ch is None:
+                continue
             if ch != prev_channels:
                 channels.append(ch)
                 prev_channels = ch
