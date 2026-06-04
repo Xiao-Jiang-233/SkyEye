@@ -4,17 +4,12 @@ SkyEye 天气分类项目 — 超参数配置中心
 所有模块通过 `from config import CONFIG` 统一获取参数
 """
 import os
-import sys
 
 # 使用国内 HF 镜像下载 timm 预训练权重（hf-mirror.com）
 # 必须在导入 timm / huggingface_hub 之前设置
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 import torch
-
-# Windows 上 multiprocessing 的 spawn 模式与 DataLoader 不兼容，
-# num_workers 必须为 0（主进程加载），否则会无限卡死或报错
-_IS_WINDOWS = sys.platform == "win32"
 
 CONFIG = {
     # ---- 数据 ----
@@ -72,7 +67,7 @@ CONFIG = {
     "device": "cuda" if torch.cuda.is_available() else "cpu",
     "seed": 42,
     "fp16": True,                 # 混合精度训练（仅 CUDA 生效）
-    "num_workers": 0 if _IS_WINDOWS else 4,  # Windows 不支持 spawn 多进程 DataLoader
+    "num_workers": 0,  # Mo 平台 Docker 共享内存有限，设为 0 避免 bus error
     "scheduler": "cosine",        # cosine / plateau
     "label_smoothing": 0.1,
     "use_focal_loss": True,       # 处理类别不平衡
