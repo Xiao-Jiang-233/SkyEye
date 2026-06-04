@@ -62,20 +62,30 @@ CONFIG = {
     "writable_root": "_data/weather",  # 将只读数据集合并复制到此可写目录（Mo 平台不允许 . 开头的文件/目录）
     # 类名别名表：自动发现时，将不同命名的类目录映射到标准 class_names（形容词）
     "class_aliases": {
-        # foggy 的别名
+        # ---- foggy 的别名（雾 / 能见度降低类） ----
         "haze": "foggy",
         "fog": "foggy",
-        # snowy 的别名
+        "fogsmog": "foggy",       # 雾霾（fog + smog 连写）
+        "smog": "foggy",          # 雾霾
+        # ---- snowy 的别名（冰雪 / 冻结降水类） ----
         "snow": "snowy",
-        # rainy 的别名
+        "frost": "snowy",         # 霜冻 → 冰晶
+        "glaze": "snowy",         # 雨凇 → 冻雨冰壳
+        # ---- rainy 的别名 ----
         "rain": "rainy",
-        # thundery 的别名
+        # ---- thundery 的别名（雷暴 / 强对流类） ----
         "thunder": "thundery",
         "thunderstorm": "thundery",
-        "lightning": "thundery",
+        "lightning": "thundery",  # 闪电
+        "hail": "thundery",       # 冰雹 → 强对流产物
+        # ---- sunny 的别名（晴 / 好天气类） ----
+        "rainbow": "sunny",       # 彩虹 → 需阳光，雨后晴天现象
     },
-    "num_classes": 6,
-    "class_names": ["cloudy", "foggy", "rainy", "snowy", "sunny", "thundery"],
+    "num_classes": 9,
+    "class_names": ["cloudy", "dew", "foggy", "rainy", "rime", "sandstorm", "snowy", "sunny", "thundery"],
+    # 暂时跳过的类：主数据集（weather_classification）中没有这些类型，训练时忽略
+    # 当主数据集扩展后，从此列表中移除即可启用
+    "skip_classes": ["dew", "rime", "sandstorm"],
     "img_size": 224,               # EfficientNet 标准输入
     "batch_size": _auto_batch_size(),  # 根据 GPU 显存自适应
     "val_split": 0.15,             # 验证集比例

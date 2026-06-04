@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 这是一个 [Mo 平台](https://momodel.cn) 上的机器学习项目。Mo 平台是一个内嵌 JupyterLab 的在线 IDE，支持 GPU 训练和模型部署。
 
-项目名：**SkyEye**，六类天气图片分类任务（cloudy, foggy, rainy, snowy, sunny, thundery）。
+项目名：**SkyEye**，九类天气图片分类任务（cloudy, dew, foggy, rainy, rime, sandstorm, snowy, sunny, thundery），当前训练启用 6 类（dew/rime/sandstorm 通过 skip_classes 暂缓）。
 技术方案：EfficientNet-B5（教师）→ 知识蒸馏 → EfficientNet-B0（学生）→ 结构化剪枝 → ONNX 导出 → INT8 量化。
 比赛约束：GPU 训练 → CPU 推理，总时限 70 分钟。
 设计文档：`docs/superpowers/specs/2026-06-03-efficientnet-kd-pruning-design.md`
@@ -52,6 +52,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 已导入的数据集
 
+### 数据集 1：weather_classification（主数据集）
+
 `datasets/<hash>/weather_classification/` — 6 类 × 各 10,000 张 = 共 **60,000 张**天气图片，按类别分目录存放：
 
 | 目录 | 数量 | 中文 |
@@ -63,8 +65,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `sunny/` | 10,000 | 晴天 |
 | `thundery/` | 10,000 | 雷暴 |
 
-> ⚠️ 类名统一使用形容词形式（cloudy/foggy/rainy/snowy/sunny/thundery），
+> ⚠️ 类名统一使用形容词形式（cloudy/dew/foggy/rainy/rime/sandstorm/snowy/sunny/thundery），
 > 数据集中 `haze`、`snow`、`thunder` 等名词变体通过 `class_aliases` 自动映射。
+
+### 数据集 2：weather-dataset.zip（补充数据集）
+
+`datasets/jehanbhathena/weather-dataset.zip` — 6,862 张，11 个细分类别，通过 `class_aliases` 映射到 9 个目标类（其中 3 类暂缓）：
+
+| 原始类 | 映射到 | 数量 | 状态 |
+| --- | --- | --- | --- |
+| dew | dew | 698 | ⏭ skip |
+| fogsmog | foggy | 851 | ✓ |
+| rime | rime | 1,160 | ⏭ skip |
+| sandstorm | sandstorm | 692 | ⏭ skip |
+| frost, glaze, snow | snowy | 1,735 | ✓ |
+| hail, lightning | thundery | 968 | ✓ |
+| rain | rainy | 526 | ✓ |
+| rainbow | sunny | 232 | ✓ |
+
+> dew/rime/sandstorm 通过 `skip_classes` 暂缓加载（主数据集无对应类）。移除 `skip_classes` 中条目即可启用。
 
 ### 多数据集合并
 

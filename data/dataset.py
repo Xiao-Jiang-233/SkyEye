@@ -270,7 +270,7 @@ def _resolve_src_dir(entry):
     return None
 
 
-def _iter_class_dirs(src_dir, class_map, target_classes):
+def _iter_class_dirs(src_dir, class_map, target_classes, skip_classes=None):
     """
     遍历数据源目录，生成 (src_label, file_paths, dst_class_name)
 
@@ -282,10 +282,12 @@ def _iter_class_dirs(src_dir, class_map, target_classes):
         src_dir: str — 数据源根目录
         class_map: dict — {src_name: dst_name} 类名映射
         target_classes: list[str] — 目标类别列表
+        skip_classes: set | None — 暂时跳过的类别（即使映射到 target_classes 也跳过）
 
     Yields:
         (label: str, files: list[str], dst_class_name: str)
     """
+    skip = set(skip_classes or [])
     top_dirs = [d for d in os.listdir(src_dir)
                 if os.path.isdir(os.path.join(src_dir, d)) and not d.startswith('_')]
     top_dir_set = set(top_dirs)
@@ -303,6 +305,8 @@ def _iter_class_dirs(src_dir, class_map, target_classes):
                     continue
                 dst_cls = class_map.get(src_cls, src_cls)
                 if target_classes and dst_cls not in target_classes:
+                    continue
+                if dst_cls in skip:
                     continue
                 files = [os.path.join(cls_dir, f) for f in os.listdir(cls_dir)
                          if os.path.isfile(os.path.join(cls_dir, f))]
@@ -326,6 +330,9 @@ def _iter_class_dirs(src_dir, class_map, target_classes):
             if target_classes and dst_cls not in target_classes:
                 print(f"    ⚠ {src_cls}→{dst_cls}: not in class_names, skipping")
                 continue
+            if dst_cls in skip:
+                print(f"    ⏭ {src_cls}→{dst_cls}: in skip_classes, skipping")
+                continue
             yield (src_cls, files, dst_cls)
 
 
@@ -346,6 +353,7 @@ def prepare_data():
     entries = _get_data_roots()
     dst = CONFIG["writable_root"]
     target_classes = CONFIG.get("class_names", [])
+    skip_classes = CONFIG.get("skip_classes", [])
 
     if os.path.exists(dst):
         print(f"Dataset already exists at {dst}")
@@ -366,7 +374,7 @@ def prepare_data():
             print(f"       class_map: {class_map}")
 
         for src_label, files, dst_class_name in _iter_class_dirs(
-                src_dir, class_map, target_classes,
+                src_dir, class_map, target_classes, skip_classes,
         ):
             dst_class_dir = os.path.join(dst, dst_class_name)
             os.makedirs(dst_class_dir, exist_ok=True)
