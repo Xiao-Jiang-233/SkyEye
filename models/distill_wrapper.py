@@ -241,13 +241,16 @@ class DistillationTrainer:
             scheduler.step()
 
             # --- Validate ---
-            val_f1, val_acc = self.evaluate(val_loader)
+            val_f1, val_acc, per_class_f1 = self.evaluate(val_loader)
             avg_loss = total_loss_avg / len(train_loader)
             print(f"KD Epoch {epoch+1}: Val F1={val_f1:.4f} | Val Acc={val_acc:.2f}%")
 
-            # TensorBoard 记录
+            # TensorBoard 记录（F1 为主监控，含 per-class）
             logger.log_metrics("train", {"loss": avg_loss}, epoch + 1)
-            logger.log_metrics("val", {"f1": val_f1, "acc": val_acc}, epoch + 1)
+            val_metrics = {"F1_Macro": val_f1, "Acc": val_acc}
+            for cls_name, cls_f1 in per_class_f1.items():
+                val_metrics[f"F1_{cls_name}"] = cls_f1
+            logger.log_metrics("val", val_metrics, epoch + 1)
             logger.flush()  # 每轮强制写入磁盘
 
             # Mo 平台 JSON 指标（Job 训练时自动可视化）
@@ -269,7 +272,7 @@ class DistillationTrainer:
 
     @torch.no_grad()
     def evaluate(self, loader):
-        """验证"""
+        """验证，返回 (macro_f1, accuracy, per_class_f1_dict)"""
         self.student.eval()
         all_preds, all_labels = [], []
         for images, labels in loader:
@@ -280,5 +283,9 @@ class DistillationTrainer:
             all_labels.extend(labels.numpy())
 
         f1 = f1_score(all_labels, all_preds, average='macro')
+        per_class_f1 = f1_score(all_labels, all_preds, average=None)
         acc = (np.array(all_preds) == np.array(all_labels)).mean() * 100
-        return f1, acc
+        # 从 val_loader 的底层 ImageFolder 获取类名
+        class_names = loader.dataset.dataset.classes
+        per_class_f1 = dict(zip(class_names, per_class_f1))
+        return f1, acc, per_class_f1

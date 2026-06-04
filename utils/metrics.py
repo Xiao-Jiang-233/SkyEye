@@ -19,6 +19,7 @@ def compute_metrics(all_labels, all_preds, class_names):
     preds_arr = np.array(all_preds)
 
     f1 = f1_score(labels_arr, preds_arr, average='macro')
+    per_class_f1 = f1_score(labels_arr, preds_arr, average=None)
     accuracy = (preds_arr == labels_arr).mean() * 100
     cm = confusion_matrix(labels_arr, preds_arr)
     report = classification_report(
@@ -27,8 +28,12 @@ def compute_metrics(all_labels, all_preds, class_names):
         digits=4,
     )
 
+    # 构建 per-class F1 字典
+    per_class_f1_dict = dict(zip(class_names, per_class_f1))
+
     return {
         "f1": f1,
+        "per_class_f1": per_class_f1_dict,
         "accuracy": accuracy,
         "confusion_matrix": cm,
         "report": report,
@@ -40,6 +45,10 @@ def print_metrics(metrics):
     print(f"\n{'='*50}")
     print(f"Macro F1 Score:  {metrics['f1']:.4f}")
     print(f"Accuracy:        {metrics['accuracy']:.2f}%")
+    print(f"{'='*50}")
+    print("Per-Class F1:")
+    for cls_name, f1_val in metrics["per_class_f1"].items():
+        print(f"  {cls_name:<15s}: {f1_val:.4f}")
     print(f"{'='*50}")
     print("Classification Report:")
     print(metrics["report"])

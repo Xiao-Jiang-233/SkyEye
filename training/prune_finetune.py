@@ -151,13 +151,21 @@ def finetune_after_prune(model, train_loader, val_loader, device, cfg, epochs, l
             all_labels.extend(labels.numpy())
 
         f1 = f1_score(all_labels, all_preds, average='macro')
+        per_class_f1 = f1_score(all_labels, all_preds, average=None)
         acc = (np.array(all_preds) == np.array(all_labels)).mean() * 100
         avg_loss = train_loss / len(train_loader)
         print(f"  [{tag}] Epoch {epoch+1}: F1={f1:.4f}, Acc={acc:.2f}%")
 
-        # TensorBoard 记录
+        # 获取类名（从 loader 底层 ImageFolder）
+        class_names = val_loader.dataset.dataset.classes
+        per_class_f1 = dict(zip(class_names, per_class_f1))
+
+        # TensorBoard 记录（F1 为主监控，含 per-class）
         logger.log_metrics("train", {"loss": avg_loss}, epoch + 1)
-        logger.log_metrics("val", {"f1": f1, "acc": acc}, epoch + 1)
+        val_metrics = {"F1_Macro": f1, "Acc": acc}
+        for cls_name, cls_f1 in per_class_f1.items():
+            val_metrics[f"F1_{cls_name}"] = cls_f1
+        logger.log_metrics("val", val_metrics, epoch + 1)
         logger.flush()  # 每轮强制写入磁盘
 
         # Mo 平台 JSON 指标（Job 训练时自动可视化）
