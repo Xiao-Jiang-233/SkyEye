@@ -123,6 +123,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # 查看当前目录内容
 ls
 
+# TensorBoard 可视化
+!tensorboard --logdir results/tb_results/ --bind_all --port 6006
+
 # 本地开发：分阶段运行训练管线
 python scripts/local_train.py check     # 检查环境
 python scripts/local_train.py teacher   # 训练教师
@@ -161,6 +164,9 @@ python scripts/local_train.py all       # 完整管线
 
 # 单张图片推理
 python -m inference.infer <image_path>
+
+# TensorBoard 可视化
+tensorboard --logdir results/tb_results/
 ```
 
 > ⚠️ **Windows 注意**：本地没有 GPU，训练极慢。建议仅在 Windows 上做代码开发和调试，

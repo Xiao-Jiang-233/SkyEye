@@ -87,6 +87,17 @@ SkyEye/
 | 4. ONNX Export + INT8 | FP32 → ONNX → INT8 动态量化 | ~3 min |
 | 5. CPU Inference | ONNX Runtime CPUExecutionProvider | <100ms/img |
 
+### 训练监控（TensorBoard）
+
+每个阶段自动写入 `results/tb_results/`，训练中/结束后均可查看：
+
+```bash
+tensorboard --logdir results/tb_results/
+# 浏览器打开 http://localhost:6006
+```
+
+SCALARS 页可对比各阶段的 loss / F1 / Accuracy 曲线。
+
 ## 依赖安装
 
 ```bash
