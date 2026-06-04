@@ -120,7 +120,7 @@ def finetune_after_prune(model, train_loader, val_loader, device, cfg, epochs, l
 
     # TensorBoard 日志（每轮微调独立目录）
     log_dir = f"results/tb_results/prune_{tag}" if tag else "results/tb_results/prune"
-    logger = TrainLogger(log_dir=log_dir, use_tb=True)
+    logger = TrainLogger(log_dir=log_dir, use_tb=cfg["use_tb"])
 
     ckpt_path = f"results/student_pruned_{tag}.pth" if tag else "results/student_pruned_temp.pth"
     best_f1 = 0.0

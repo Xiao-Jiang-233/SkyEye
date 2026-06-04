@@ -105,7 +105,7 @@ def train_teacher():
     scaler = GradScaler(enabled=cfg["fp16"])
 
     # TensorBoard 日志
-    logger = TrainLogger(log_dir="results/tb_results/teacher", use_tb=True)
+    logger = TrainLogger(log_dir="results/tb_results/teacher", use_tb=cfg["use_tb"])
 
     # 5) 训练循环
     best_f1 = 0.0

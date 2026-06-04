@@ -1,22 +1,41 @@
 """训练日志工具：控制台输出 + TensorBoard（可选）"""
 import os
 import time
+import warnings
 from datetime import datetime
 
 
 class TrainLogger:
-    """简单的训练日志记录器，支持 TensorBoard SummaryWriter"""
+    """简单的训练日志记录器，支持 TensorBoard SummaryWriter
+
+    当 tensorboard 包未安装时，use_tb=True 会优雅降级（打印警告并禁用 TB），
+    不会中断训练。
+    """
 
     def __init__(self, log_dir=None, use_tb=False):
         self.use_tb = use_tb
         self.writer = None
+        self._tb_available = False
 
         if use_tb:
-            from torch.utils.tensorboard import SummaryWriter
+            try:
+                from torch.utils.tensorboard import SummaryWriter
+                self._tb_available = True
+            except ImportError:
+                warnings.warn(
+                    "TensorBoard 日志已启用，但 tensorboard 包未安装。"
+                    "请运行: pip install tensorboard。"
+                    "本次训练将跳过 TensorBoard 记录。"
+                )
+                self.use_tb = False
+
+        if self._tb_available:
             if log_dir is None:
                 log_dir = f"results/tb_results/{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             os.makedirs(log_dir, exist_ok=True)
+            from torch.utils.tensorboard import SummaryWriter
             self.writer = SummaryWriter(log_dir)
+            print(f"TensorBoard 日志目录: {log_dir}")
 
         self.start_time = time.time()
         self.metrics_history = {}

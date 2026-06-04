@@ -182,7 +182,7 @@ class DistillationTrainer:
         scaler = GradScaler(enabled=self.cfg["fp16"])
 
         # TensorBoard 日志
-        logger = TrainLogger(log_dir="results/tb_results/distill", use_tb=True)
+        logger = TrainLogger(log_dir="results/tb_results/distill", use_tb=self.cfg["use_tb"])
 
         best_f1 = 0.0
         for epoch in range(self.cfg["kd_epochs"]):

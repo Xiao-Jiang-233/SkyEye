@@ -105,6 +105,7 @@ CONFIG = {
     "device": "cuda" if torch.cuda.is_available() else "cpu",
     "seed": 42,
     "fp16": True,                 # 混合精度训练（仅 CUDA 生效）
+    "use_tb": True,              # TensorBoard 日志（需 pip install tensorboard）
     "num_workers": _auto_num_workers(),  # 自适应：Win→0, Linux→min(4, cpu//2)
     "scheduler": "cosine",        # cosine / plateau
     "label_smoothing": 0.1,
