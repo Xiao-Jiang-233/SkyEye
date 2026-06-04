@@ -31,7 +31,9 @@ class TrainLogger:
 
         if self._tb_available:
             if log_dir is None:
-                log_dir = f"results/tb_results/{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                log_dir = "results/tb_results"
+            # 在指定目录下创建时间戳子目录，避免重复运行日志混叠
+            log_dir = os.path.join(log_dir, datetime.now().strftime('%Y%m%d_%H%M%S'))
             os.makedirs(log_dir, exist_ok=True)
             from torch.utils.tensorboard import SummaryWriter
             self.writer = SummaryWriter(log_dir)
@@ -65,6 +67,12 @@ class TrainLogger:
         """返回已用时间（秒）"""
         return time.time() - self.start_time
 
+    def flush(self):
+        """强制将缓冲区写入磁盘（防止数据丢失）"""
+        if self.writer:
+            self.writer.flush()
+
     def close(self):
         if self.writer:
+            self.writer.flush()
             self.writer.close()

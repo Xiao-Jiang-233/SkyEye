@@ -139,6 +139,7 @@ def train_teacher():
         # TensorBoard 记录
         logger.log_metrics("train", {"loss": avg_loss}, epoch + 1)
         logger.log_metrics("val", {"f1": val_f1, "acc": val_acc}, epoch + 1)
+        logger.flush()  # 每轮强制写入磁盘
 
         # Mo 平台 JSON 指标（Job 训练时自动可视化）
         print('{"metric": "teacher_train_loss", "value": %.4f, "epoch": %d}' % (avg_loss, epoch + 1))
