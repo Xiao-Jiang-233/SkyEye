@@ -3,7 +3,13 @@
 SkyEye 天气分类项目 — 超参数配置中心
 所有模块通过 `from config import CONFIG` 统一获取参数
 """
+import os
 import sys
+
+# 使用国内 HF 镜像下载 timm 预训练权重（hf-mirror.com）
+# 必须在导入 timm / huggingface_hub 之前设置
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+
 import torch
 
 # Windows 上 multiprocessing 的 spawn 模式与 DataLoader 不兼容，
