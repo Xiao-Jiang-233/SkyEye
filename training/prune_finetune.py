@@ -21,6 +21,7 @@ from config import CONFIG
 from models.weather_efficientnet import WeatherEfficientNet
 from data.dataset import create_dataloaders, compute_class_weights
 from training.train_teacher import FocalLoss
+from utils.logger import TrainLogger
 
 
 class StructuredPruner:
@@ -117,6 +118,10 @@ def finetune_after_prune(model, train_loader, val_loader, device, cfg, epochs, l
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     scaler = GradScaler(enabled=cfg["fp16"])
 
+    # TensorBoard 日志（每轮微调独立目录）
+    log_dir = f"results/tb_results/prune_{tag}" if tag else "results/tb_results/prune"
+    logger = TrainLogger(log_dir=log_dir, use_tb=True)
+
     ckpt_path = f"results/student_pruned_{tag}.pth" if tag else "results/student_pruned_temp.pth"
     best_f1 = 0.0
 
@@ -150,6 +155,10 @@ def finetune_after_prune(model, train_loader, val_loader, device, cfg, epochs, l
         avg_loss = train_loss / len(train_loader)
         print(f"  [{tag}] Epoch {epoch+1}: F1={f1:.4f}, Acc={acc:.2f}%")
 
+        # TensorBoard 记录
+        logger.log_metrics("train", {"loss": avg_loss}, epoch + 1)
+        logger.log_metrics("val", {"f1": f1, "acc": acc}, epoch + 1)
+
         # Mo 平台 JSON 指标（Job 训练时自动可视化）
         print('{"metric": "prune_%s_loss", "value": %.4f, "epoch": %d}' % (tag, avg_loss, epoch + 1))
         print('{"metric": "prune_%s_f1", "value": %.4f, "epoch": %d}' % (tag, f1, epoch + 1))
@@ -158,6 +167,8 @@ def finetune_after_prune(model, train_loader, val_loader, device, cfg, epochs, l
         if f1 > best_f1:
             best_f1 = f1
             torch.save(model.state_dict(), ckpt_path)
+
+    logger.close()
 
     model.load_state_dict(torch.load(ckpt_path, weights_only=False))
     return model

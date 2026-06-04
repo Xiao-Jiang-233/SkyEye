@@ -17,6 +17,7 @@ from tqdm import tqdm
 from config import CONFIG
 from models.weather_efficientnet import WeatherEfficientNet
 from data.dataset import create_dataloaders, compute_class_weights
+from utils.logger import TrainLogger
 
 
 class FocalLoss(nn.Module):
@@ -103,6 +104,9 @@ def train_teacher():
     scheduler = CosineAnnealingLR(optimizer, T_max=cfg["teacher_epochs"])
     scaler = GradScaler(enabled=cfg["fp16"])
 
+    # TensorBoard 日志
+    logger = TrainLogger(log_dir="results/tb_results/teacher", use_tb=True)
+
     # 5) 训练循环
     best_f1 = 0.0
     for epoch in range(cfg["teacher_epochs"]):
@@ -132,6 +136,10 @@ def train_teacher():
         avg_loss = train_loss / len(train_loader)
         print(f"Epoch {epoch+1}: Train Loss={avg_loss:.4f} | Val F1={val_f1:.4f} | Val Acc={val_acc:.2f}%")
 
+        # TensorBoard 记录
+        logger.log_metrics("train", {"loss": avg_loss}, epoch + 1)
+        logger.log_metrics("val", {"f1": val_f1, "acc": val_acc}, epoch + 1)
+
         # Mo 平台 JSON 指标（Job 训练时自动可视化）
         print('{"metric": "teacher_train_loss", "value": %.4f, "epoch": %d}' % (avg_loss, epoch + 1))
         print('{"metric": "teacher_val_f1", "value": %.4f, "epoch": %d}' % (val_f1, epoch + 1))
@@ -144,6 +152,8 @@ def train_teacher():
             print(f"  ✓ Best teacher saved! F1={best_f1:.4f}")
 
     print(f"\nTeacher training done. Best F1: {best_f1:.4f}")
+
+    logger.close()
 
     # 加载最佳权重
     teacher.load_state_dict(torch.load(cfg["teacher_ckpt"], weights_only=False))

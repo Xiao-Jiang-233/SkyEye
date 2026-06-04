@@ -17,6 +17,7 @@ from tqdm import tqdm
 from sklearn.metrics import f1_score
 
 from config import CONFIG
+from utils.logger import TrainLogger
 
 
 class FeatureProjector(nn.Module):
@@ -180,6 +181,9 @@ class DistillationTrainer:
         scheduler = CosineAnnealingLR(optimizer, T_max=self.cfg["kd_epochs"])
         scaler = GradScaler(enabled=self.cfg["fp16"])
 
+        # TensorBoard 日志
+        logger = TrainLogger(log_dir="results/tb_results/distill", use_tb=True)
+
         best_f1 = 0.0
         for epoch in range(self.cfg["kd_epochs"]):
             # --- Train ---
@@ -204,6 +208,10 @@ class DistillationTrainer:
             avg_loss = total_loss_avg / len(train_loader)
             print(f"KD Epoch {epoch+1}: Val F1={val_f1:.4f} | Val Acc={val_acc:.2f}%")
 
+            # TensorBoard 记录
+            logger.log_metrics("train", {"loss": avg_loss}, epoch + 1)
+            logger.log_metrics("val", {"f1": val_f1, "acc": val_acc}, epoch + 1)
+
             # Mo 平台 JSON 指标（Job 训练时自动可视化）
             print('{"metric": "kd_train_loss", "value": %.4f, "epoch": %d}' % (avg_loss, epoch + 1))
             print('{"metric": "kd_val_f1", "value": %.4f, "epoch": %d}' % (val_f1, epoch + 1))
@@ -214,6 +222,8 @@ class DistillationTrainer:
                 best_f1 = val_f1
                 torch.save(self.student.state_dict(), self.cfg["distilled_ckpt"])
                 print(f"  ✓ Best distilled student saved! F1={best_f1:.4f}")
+
+        logger.close()
 
         # 加载最佳权重
         self.student.load_state_dict(torch.load(self.cfg["distilled_ckpt"], weights_only=False))
