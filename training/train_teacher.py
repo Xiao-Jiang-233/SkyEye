@@ -129,7 +129,13 @@ def train_teacher():
 
         # --- Validate ---
         val_f1, val_acc = evaluate(teacher, val_loader, device)
-        print(f"Epoch {epoch+1}: Train Loss={train_loss/len(train_loader):.4f} | Val F1={val_f1:.4f} | Val Acc={val_acc:.2f}%")
+        avg_loss = train_loss / len(train_loader)
+        print(f"Epoch {epoch+1}: Train Loss={avg_loss:.4f} | Val F1={val_f1:.4f} | Val Acc={val_acc:.2f}%")
+
+        # Mo 平台 JSON 指标（Job 训练时自动可视化）
+        print('{"metric": "teacher_train_loss", "value": %.4f, "epoch": %d}' % (avg_loss, epoch + 1))
+        print('{"metric": "teacher_val_f1", "value": %.4f, "epoch": %d}' % (val_f1, epoch + 1))
+        print('{"metric": "teacher_val_acc", "value": %.2f, "epoch": %d}' % (val_acc, epoch + 1))
 
         # 保存最佳
         if val_f1 > best_f1:

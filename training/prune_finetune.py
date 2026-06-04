@@ -147,7 +147,13 @@ def finetune_after_prune(model, train_loader, val_loader, device, cfg, epochs, l
 
         f1 = f1_score(all_labels, all_preds, average='macro')
         acc = (np.array(all_preds) == np.array(all_labels)).mean() * 100
+        avg_loss = train_loss / len(train_loader)
         print(f"  [{tag}] Epoch {epoch+1}: F1={f1:.4f}, Acc={acc:.2f}%")
+
+        # Mo 平台 JSON 指标（Job 训练时自动可视化）
+        print('{"metric": "prune_%s_loss", "value": %.4f, "epoch": %d}' % (tag, avg_loss, epoch + 1))
+        print('{"metric": "prune_%s_f1", "value": %.4f, "epoch": %d}' % (tag, f1, epoch + 1))
+        print('{"metric": "prune_%s_acc", "value": %.2f, "epoch": %d}' % (tag, acc, epoch + 1))
 
         if f1 > best_f1:
             best_f1 = f1
