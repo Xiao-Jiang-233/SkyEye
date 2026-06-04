@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Mo 平台（云端 Linux）
 
-- **运行时环境**: Python 3.9.5 | PyTorch 2.3.1 | CUDA (Mo 平台 GPU)
+- **运行时环境**: Python 3.13.13 | PyTorch 2.8.0+cu128 | CUDA (Mo 平台 GPU)
 - 开发方式：纯模块化 `.py` 文件 + `main.ipynb` 作为入口调用，`prepare_datasets.ipynb` 备用
 - 模块结构：`config.py`（超参数）→ `data/`（加载+增强）→ `models/`（EfficientNet封装+蒸馏）→ `training/`（教师训练+蒸馏+剪枝微调）→ `inference/`（ONNX导出+INT8量化+CPU推理）→ `utils/`（指标+日志）
 - Python 包管理：`!pip install <package>`（在 Notebook cell 中直接运行）
@@ -23,8 +23,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 本地开发（Windows 11）
 
-- **运行时环境**: Python 3.9.x | PyTorch 2.3.1 | CPU（无 CUDA）
-- **虚拟环境**: `.venv/`（已在 `.gitignore` 中排除），通过 `pip install -r requirements.txt` 创建
+- **运行时环境**: Python 3.13.x | PyTorch 2.8.0+cu128 | CPU/CUDA
+- **虚拟环境**: `.venv/`（已在 `.gitignore` 中排除），通过 pip 直接安装依赖
 - 开发方式：纯模块化 `.py` 文件，通过 `scripts/local_train.py` CLI 运行
 - **Windows 特别说明**：
   - `num_workers` 自动设为 `0`（`config.py` 中检测 `sys.platform`），避免 multiprocessing spawn 卡死
@@ -183,20 +183,24 @@ python -m inference.infer <image_path>
 
 ## 核心依赖
 
-目标环境：**Python 3.9.5 | PyTorch 2.3.1**
+目标环境：**Python 3.13.13 | PyTorch 2.8.0+cu128**
 
-在 Notebook cell 中执行（或直接用 `requirements.txt`）：
+在 Notebook cell 中执行：
 
 ```bash
-!pip install -r requirements.txt
+# PyTorch + torchvision（CUDA 12.6）
+!pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
+
+# 其余依赖
+!pip install timm==1.0.27 onnx==1.21.0 onnxruntime-gpu==1.26.0 tqdm scikit-learn
 ```
 
 版本清单：
 
 ```bash
-torch==2.3.1  torchvision==0.18.1  timm==1.0.8  onnx==1.16.1  onnxruntime-gpu==1.18.1  tqdm  scikit-learn
+torch==2.8.0  torchvision==0.23.0  timm==1.0.27  onnx==1.21.0  onnxruntime-gpu==1.26.0  tqdm  scikit-learn
 
 ```
 
 > ⚠️ **Windows 本地**：无 GPU 时，将 `onnxruntime-gpu` 替换为 `onnxruntime`（CPU 版）。
-> PyTorch 默认安装 CPU-only 版本（`pip install torch==2.3.1` 在 Windows 上不包含 CUDA）。
+> PyTorch CUDA 版本需匹配本机 CUDA 驱动（cu128 for CUDA 12.8，Blackwell GPU 最低要求 12.8）。

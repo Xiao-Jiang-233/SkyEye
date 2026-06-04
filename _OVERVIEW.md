@@ -34,12 +34,12 @@ CPU Inference (ONNX Runtime)
 
 | 组件 | 版本 |
 | --- | --- |
-| **Python** | 3.9.5 |
-| **PyTorch** | 2.3.1 |
-| **torchvision** | 0.18.1 |
-| **timm** | 1.0.8 |
-| **onnx** | 1.16.1 |
-| **onnxruntime-gpu** | 1.18.1 |
+| **Python** | 3.13.13 |
+| **PyTorch** | 2.8.0+cu128 |
+| **torchvision** | 0.23.0 |
+| **timm** | 1.0.27 |
+| **onnx** | 1.21.0 |
+| **onnxruntime-gpu** | 1.26.0 |
 | **平台** | [Mo Platform](https://momodel.cn) (JupyterLab + GPU + CPU 推理) |
 
 > 预训练模型下载已配置 HF 镜像 (`hf-mirror.com`)，国内可正常访问。
@@ -90,7 +90,11 @@ SkyEye/
 ## 依赖安装
 
 ```bash
-pip install -r requirements.txt
+# PyTorch + torchvision（CUDA 12.6）
+pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
+
+# 其余依赖
+pip install timm==1.0.27 onnx==1.21.0 onnxruntime-gpu==1.26.0 tqdm scikit-learn
 ```
 
 ## 相关文档
