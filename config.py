@@ -26,7 +26,7 @@ CONFIG = {
     #           2. dict {path, class_map}（手动映射：foggy→haze, snowy→snow）
     #   支持 .zip 文件（自动解压到临时目录）
     "data_roots": "auto",
-    "writable_root": ".data/weather",  # 将只读数据集合并复制到此可写目录
+    "writable_root": "_data/weather",  # 将只读数据集合并复制到此可写目录（Mo 平台不允许 . 开头的文件/目录）
     # 类名别名表：自动发现时，将不同命名的类目录映射到标准 class_names（形容词）
     "class_aliases": {
         # foggy 的别名

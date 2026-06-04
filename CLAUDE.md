@@ -163,7 +163,7 @@ python -m inference.infer <image_path>
 
 > ⚠️ **Windows 注意**：本地没有 GPU，训练极慢。建议仅在 Windows 上做代码开发和调试，
 > 实际训练在 Mo 平台 GPU 环境执行。`data_root` 路径需要根据本地数据集位置修改 `config.py`。
-> 数据集自动合并到 `writable_root`（默认 `.data/weather/`），此目录在 `.gitignore` 中已排除。
+> 数据集自动合并到 `writable_root`（默认 `_data/weather/`），此目录在 `.gitignore` 中已排除。
 
 ## 注意事项
 
