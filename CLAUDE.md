@@ -46,6 +46,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `results/` | 训练结果和模型检查点存放处 |
 | `results/tb_results/` | TensorBoard 日志存放处 |
 | `_OVERVIEW.md` | 项目介绍（功能、环境、结构、流程） |
+| `docs/接口文档.md` | 模块 API 接口文档 |
+| `docs/开发和部署项目.md` | Mo 平台应用部署流程 |
 | `app_spec.yml` | 定义模型输入输出，用于部署服务（待创建） |
 
 ## 已导入的数据集
@@ -170,6 +172,8 @@ python -m inference.infer <image_path>
 - 比赛约束：GPU 训练 + CPU 推理，总时限 70 分钟（epoch 已缩减适配）
 - 类名统一使用形容词：数据集目录可能用名词（`haze`, `snow`, `thunder`），`class_aliases` 自动映射到 `foggy`, `snowy`, `thundery`
 - `datasets/` 目录是只读的，不可直接修改其中的文件
+- **Mo 平台不允许 `.` 开头的文件/目录**，故使用 `_data/` 而非 `.data/`
+- 预训练模型下载已配置 HF 镜像：`config.py` 中 `HF_ENDPOINT=https://hf-mirror.com`
 - 运行 job 训练时，结果务必指定输出到 `results/` 目录
 - 项目部署需创建 `app_spec.yml` 定义输入输出接口
 - `.localenv/` 和 `.venv/` 是本地虚拟环境目录（已在 `.gitignore` 中排除）

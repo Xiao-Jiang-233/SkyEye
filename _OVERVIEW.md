@@ -1,15 +1,31 @@
 # SkyEye — 天气图片分类
 
-基于 **EfficientNet-B5 → 知识蒸馏 → B0 → 结构化剪枝 → ONNX** 的六类天气分类管线。
+基于 **EfficientNet-B5 → 知识蒸馏 → B0 → 结构化剪枝 → ONNX → INT8 量化** 的六类天气分类管线。
 
 ## 功能
 
-对输入天气图片进行六分类预测：cloudy（多云）、haze（雾霾）、rainy（雨天）、snow（雪天）、sunny（晴天）、thunder（雷暴）。
+对输入天气图片进行六分类预测：
+
+| 类名 | 中文 |
+|------|------|
+| `cloudy` | 多云 |
+| `foggy` | 雾霾 |
+| `rainy` | 雨天 |
+| `snowy` | 雪天 |
+| `sunny` | 晴天 |
+| `thundery` | 雷暴 |
 
 ## 技术方案
 
 ```text
-EfficientNet-B5 (Teacher) → Knowledge Distillation → EfficientNet-B0 (Student) → Structured Pruning → ONNX Export → INT8 Quantization → CPU Inference
+EfficientNet-B5 (Teacher)
+    ↓ Knowledge Distillation (软标签 + 特征对齐)
+EfficientNet-B0 (Student)
+    ↓ Structured Pruning (渐进 2 轮: 20% → 40%)
+Pruned EfficientNet-B0
+    ↓ ONNX Export (FP32)
+    ↓ INT8 Dynamic Quantization
+CPU Inference (ONNX Runtime)
 ```
 
 训练 GPU，推理 CPU。总时限 70 分钟。
@@ -26,16 +42,18 @@ EfficientNet-B5 (Teacher) → Knowledge Distillation → EfficientNet-B0 (Studen
 | **onnxruntime-gpu** | 1.18.1 |
 | **平台** | [Mo Platform](https://momodel.cn) (JupyterLab + GPU + CPU 推理) |
 
+> 预训练模型下载已配置 HF 镜像 (`hf-mirror.com`)，国内可正常访问。
+
 ## 项目结构
 
 ```text
 SkyEye/
-├── main.ipynb                     # Notebook 入口，使用 !cp -R / !7zx 预处理数据
+├── main.ipynb                     # Notebook 入口，按顺序执行训练管线
 ├── prepare_datasets.ipynb         # 数据集准备（备用）
-├── config.py                      # 超参数统一管理
+├── config.py                      # 超参数统一管理 + HF 镜像配置
 ├── data/
-│   ├── augmentations.py           # Train/Val 增强策略
-│   └── dataset.py                 # ImageFolder 加载 + 类别权重
+│   ├── augmentations.py           # Train/Val 增强策略 (RandAugment)
+│   └── dataset.py                 # 多源合并 + ImageFolder + 类别权重
 ├── models/
 │   ├── weather_efficientnet.py    # EfficientNet 封装 + 中间层 hook
 │   └── distill_wrapper.py         # 软标签 + 特征蒸馏训练器
@@ -48,32 +66,38 @@ SkyEye/
 │   └── infer.py                   # 单张/批量推理
 └── utils/
     ├── metrics.py                 # F1 / 混淆矩阵 / 分类报告
-    └── logger.py                  # TensorBoard 日志
+    └── logger.py                  # TensorBoard + Mo 平台 JSON 日志
 ```
 
 ## 数据集
 
 6 类天气图片 × 各 10,000 张 = 共 **60,000** 张。
 
-| 类别 | 数量 |
-| --- | --- |
-| cloudy（多云） | 10,000 |
-| haze（雾霾） | 10,000 |
-| rainy（雨天） | 10,000 |
-| snow（雪天） | 10,000 |
-| sunny（晴天） | 10,000 |
-| thunder（雷暴） | 10,000 |
+数据源合并到 `_data/weather/`（不入 git），支持多源自动合并 + 类名映射。
+
+> Mo 平台不允许 `.` 开头的文件/目录，故使用 `_data/` 前缀。
 
 ## 训练流程（70 分钟 GPU 时限）
 
-1. **Train Teacher:** EfficientNet-B5, **10** epochs, FocalLoss (~30 min)
-2. **Knowledge Distillation:** B5 → B0, **15** epochs, T=4, α=0.7 (~15 min)
-3. **Structured Pruning:** 渐进 **2** 轮 (20% → 40%) + Fine-tune **5** epochs × 2 (~5 min)
-4. **ONNX Export + INT8 Quantization:** FP32 → INT8 动态量化 (~3 min)
-5. **CPU Inference:** ONNX Runtime CPUExecutionProvider
+| 阶段 | 内容 | 预估耗时 |
+|------|------|----------|
+| 1. Train Teacher | EfficientNet-B5, 10 epochs, FocalLoss | ~30 min |
+| 2. Knowledge Distillation | B5 → B0, 15 epochs, T=4, α=0.7 | ~15 min |
+| 3. Structured Pruning | 渐进 2 轮 (20%→40%) + Fine-tune 5 epoch × 2 | ~5 min |
+| 4. ONNX Export + INT8 | FP32 → ONNX → INT8 动态量化 | ~3 min |
+| 5. CPU Inference | ONNX Runtime CPUExecutionProvider | <100ms/img |
 
 ## 依赖安装
 
 ```bash
 pip install -r requirements.txt
 ```
+
+## 相关文档
+
+| 文档 | 说明 |
+|------|------|
+| [CLAUDE.md](CLAUDE.md) | 项目开发指南 |
+| [docs/接口文档.md](docs/接口文档.md) | 模块 API 接口文档 |
+| [docs/开发和部署项目.md](docs/开发和部署项目.md) | Mo 平台部署流程 |
+| [设计文档](docs/superpowers/specs/) | 技术方案设计 |
