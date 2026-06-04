@@ -10,6 +10,10 @@ import sys
 # 必须在导入 timm / huggingface_hub 之前设置
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
+# 限制每个 worker 的线程数，防止 DataLoader 多进程时 CPU 线程爆炸
+os.environ.setdefault("OMP_NUM_THREADS", "2")
+os.environ.setdefault("MKL_NUM_THREADS", "2")
+
 import torch
 
 # GPU 性能优化
@@ -41,12 +45,13 @@ def _auto_batch_size():
 def _auto_num_workers():
     """自适应 DataLoader 线程数。
 
-    Windows spawn 机制下多线程会卡死，强制返回 0。
-    Linux 下取 CPU 核数的一半，上限 4（避免 Docker 共享内存溢出）。
+    Windows spawn 下保守取 2（避免启动开销过大），Linux 取 CPU 核数的一半，上限 4。
+    注意：Windows 上必须通过独立 .py 脚本运行（local_train.py），且入口有
+    if __name__ == "__main__" 守卫，否则 spawn 会导致递归创建进程死锁。
     """
-    if sys.platform == "win32":
-        return 0
     cpu_count = os.cpu_count() or 4
+    if sys.platform == "win32":
+        return min(2, max(0, cpu_count // 2))
     return min(4, max(0, cpu_count // 2))
 
 CONFIG = {
