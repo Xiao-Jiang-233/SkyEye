@@ -11,6 +11,10 @@ os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 import torch
 
+# GPU 性能优化
+if torch.cuda.is_available():
+    torch.backends.cudnn.benchmark = True
+
 CONFIG = {
     # ---- 数据 ----
     # 多数据集自动处理：
@@ -39,7 +43,7 @@ CONFIG = {
     "num_classes": 6,
     "class_names": ["cloudy", "foggy", "rainy", "snowy", "sunny", "thundery"],
     "img_size": 224,               # EfficientNet 标准输入
-    "batch_size": 32,
+    "batch_size": 16,              # 8G 显存，B5 用 fp16+batch16 刚好
     "val_split": 0.15,             # 验证集比例
 
     # ---- 教师模型 ----
