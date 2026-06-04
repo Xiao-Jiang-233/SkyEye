@@ -45,7 +45,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `datasets/` | 导入的数据集，**只读**，需复制到其他目录才能修改 |
 | `results/` | 训练结果和模型检查点存放处 |
 | `results/tb_results/` | TensorBoard 日志存放处 |
-| `_OVERVIEW.md` | 项目介绍（功能、环境、结构、流程） |
+| `_OVERVIEW.md` | 项目介绍，**从 README.md 自动同步**，请勿手动编辑，修改 README.md 后 `cp README.md _OVERVIEW.md` 即可 |
 | `docs/接口文档.md` | 模块 API 接口文档 |
 
 | `app_spec.yml` | 定义模型输入输出，用于部署服务（待创建） |
@@ -194,6 +194,7 @@ tensorboard --logdir results/tb_results/
 
 ## 注意事项
 
+- **`_OVERVIEW.md` 是 `README.md` 的镜像文件，修改项目概述时只改 `README.md`，完成后 `cp README.md _OVERVIEW.md` 同步即可**
 - 比赛约束：GPU 训练 + CPU 推理，总时限 70 分钟（epoch 已缩减适配）
 - 类名统一使用形容词：数据集目录可能用名词（`haze`, `snow`, `thunder`），`class_aliases` 自动映射到 `foggy`, `snowy`, `thundery`
 - `datasets/` 目录是只读的，不可直接修改其中的文件
