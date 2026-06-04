@@ -63,9 +63,10 @@ class DistillationTrainer:
         for p in self.teacher.parameters():
             p.requires_grad = False
 
-        # 获取中间层通道信息
+        # 获取中间层通道信息和 block 索引
         self.teacher_channels = teacher.get_stage_channels()
         self.student_channels = student.get_stage_channels()
+        self.kd_indices = self._get_kd_indices()
 
         # 选择关键 stage 用于特征蒸馏（取最后 N 个 stage）
         n_stages = min(len(self.teacher_channels), len(self.student_channels))
@@ -78,8 +79,39 @@ class DistillationTrainer:
         ])
 
         print(f"Feature KD stages: {n_stages}")
+        print(f"KD block indices: {self.kd_indices}")
         print(f"Teacher channels: {self.teacher_channels}")
         print(f"Student channels: {self.student_channels}")
+
+    def _get_kd_indices(self):
+        """从 timm feature_info 解析 KD 使用的 block 索引，用于对齐 hook 特征。
+
+        timm feature_info 中 module 字段格式为 'blocks.N'，从中提取 N 作为索引。
+        B5 features_only=False 时 entries 无 'index' 字段，需从 module 字符串解析。
+        """
+        info = getattr(self.teacher.backbone, 'feature_info', None)
+        if info is None:
+            return list(range(len(self.teacher_channels)))
+        if hasattr(info, 'info'):
+            info = info.info
+
+        indices = []
+        for i, entry in enumerate(info):
+            # 优先使用显式 index 字段
+            if 'index' in entry:
+                indices.append(entry['index'])
+            elif 'module' in entry:
+                # 从 'blocks.N' 解析 N
+                parts = entry['module'].split('.')
+                try:
+                    indices.append(int(parts[-1]))
+                except (ValueError, IndexError):
+                    indices.append(i)
+            else:
+                indices.append(i)
+
+        n = min(len(self.teacher_channels), len(self.student_channels))
+        return indices[-n:]
 
     def distillation_loss(self, student_logits, teacher_logits, labels):
         """
@@ -150,9 +182,11 @@ class DistillationTrainer:
         with autocast(enabled=self.cfg["fp16"]):
             student_logits, student_feats = self.student(images, return_features=True)
 
-            # 取最后 N 个 stage 的特征
-            teacher_feat_list = list(teacher_feats.values())[-len(self.proj_layers):]
-            student_feat_list = list(student_feats.values())[-len(self.proj_layers):]
+            # 按 feature_info 索引选取特征（跳过通道重复的 block）
+            all_teacher = list(teacher_feats.values())
+            all_student = list(student_feats.values())
+            teacher_feat_list = [all_teacher[i] for i in self.kd_indices]
+            student_feat_list = [all_student[i] for i in self.kd_indices]
 
             # 组合损失
             kd_loss = self.distillation_loss(student_logits, teacher_logits, labels)
