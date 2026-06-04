@@ -103,5 +103,5 @@ pip install timm==1.0.27 onnx==1.21.0 onnxruntime-gpu==1.26.0 tqdm scikit-learn
 |------|------|
 | [CLAUDE.md](CLAUDE.md) | 项目开发指南 |
 | [docs/接口文档.md](docs/接口文档.md) | 模块 API 接口文档 |
-| [docs/开发和部署项目.md](docs/开发和部署项目.md) | Mo 平台部署流程 |
+
 | [设计文档](docs/superpowers/specs/) | 技术方案设计 |

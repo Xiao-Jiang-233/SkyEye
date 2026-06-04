@@ -47,7 +47,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `results/tb_results/` | TensorBoard 日志存放处 |
 | `_OVERVIEW.md` | 项目介绍（功能、环境、结构、流程） |
 | `docs/接口文档.md` | 模块 API 接口文档 |
-| `docs/开发和部署项目.md` | Mo 平台应用部署流程 |
+
 | `app_spec.yml` | 定义模型输入输出，用于部署服务（待创建） |
 
 ## 已导入的数据集
