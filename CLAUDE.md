@@ -23,7 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 本地开发（Windows 11）
 
-- **运行时环境**: Python 3.13.x | PyTorch 2.8.0+cu128 | CPU/CUDA
+- **运行时环境**: Python 3.13.x | PyTorch 2.8.0+cu128 | CUDA (RTX 5070)
 - **虚拟环境**: `.venv/`（已在 `.gitignore` 中排除），通过 pip 直接安装依赖
 - 开发方式：纯模块化 `.py` 文件，通过 `scripts/local_train.py` CLI 运行
 - **Windows 特别说明**：
@@ -189,24 +189,21 @@ tensorboard --logdir results/tb_results/
 
 ## 核心依赖
 
-目标环境：**Python 3.13.13 | PyTorch 2.8.0+cu128**
-
-在 Notebook cell 中执行：
+基准版本：**torch 2.8.0+cu128 / torchvision 0.23.0+cu128**
 
 ```bash
-# PyTorch + torchvision（CUDA 12.6）
-!pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
-
-# 其余依赖
-!pip install timm==1.0.27 onnx==1.21.0 onnxruntime-gpu==1.26.0 tqdm scikit-learn
+pip install -r requirements.txt
 ```
 
-版本清单：
+Notebook 中直接执行 Cell 1。
 
-```bash
-torch==2.8.0  torchvision==0.23.0  timm==1.0.27  onnx==1.21.0  onnxruntime-gpu==1.26.0  tqdm  scikit-learn
+| 包 | 版本 |
+|---|---|
+| torch | 2.8.0+cu128 |
+| torchvision | 0.23.0+cu128 |
+| timm | 1.0.27 |
+| onnx | 1.21.0 |
+| onnxruntime | 1.26.0 |
+| tqdm / scikit-learn / scipy / tensorboard | latest |
 
-```
-
-> ⚠️ **Windows 本地**：无 GPU 时，将 `onnxruntime-gpu` 替换为 `onnxruntime`（CPU 版）。
-> PyTorch CUDA 版本需匹配本机 CUDA 驱动（cu128 for CUDA 12.8，Blackwell GPU 最低要求 12.8）。
+> RTX 5070（Blackwell）驱动 ≥596 支持 CUDA 12.8，与 cu128 索引完全兼容。

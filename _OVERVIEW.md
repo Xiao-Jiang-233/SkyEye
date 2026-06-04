@@ -36,11 +36,11 @@ CPU Inference (ONNX Runtime)
 | --- | --- |
 | **Python** | 3.13.13 |
 | **PyTorch** | 2.8.0+cu128 |
-| **torchvision** | 0.23.0 |
+| **torchvision** | 0.23.0+cu128 |
 | **timm** | 1.0.27 |
 | **onnx** | 1.21.0 |
-| **onnxruntime-gpu** | 1.26.0 |
-| **平台** | [Mo Platform](https://momodel.cn) (JupyterLab + GPU + CPU 推理) |
+| **onnxruntime** | 1.26.0 |
+| **平台** | [Mo Platform](https://momodel.cn) (JupyterLab + GPU) / Windows 11 + RTX 5070 本地开发 |
 
 > 预训练模型下载已配置 HF 镜像 (`hf-mirror.com`)，国内可正常访问。
 
@@ -101,12 +101,10 @@ SCALARS 页可对比各阶段的 loss / F1 / Accuracy 曲线。
 ## 依赖安装
 
 ```bash
-# PyTorch + torchvision（CUDA 12.6）
-pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
-
-# 其余依赖
-pip install timm==1.0.27 onnx==1.21.0 onnxruntime-gpu==1.26.0 tqdm scikit-learn
+pip install -r requirements.txt
 ```
+
+Notebook 中直接执行 Cell 1 即可。
 
 ## 相关文档
 
