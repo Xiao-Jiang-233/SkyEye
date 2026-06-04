@@ -11,3 +11,9 @@ core.*
 /_data/
 
 *.whl
+
+# 模型权重
+*.pth
+
+# TensorBoard 事件文件
+results/tb_results/*/
