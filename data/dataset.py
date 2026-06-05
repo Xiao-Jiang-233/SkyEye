@@ -430,6 +430,17 @@ def create_dataloaders(data_root=None, img_size=None, batch_size=None, num_worke
         random_state=cfg["seed"],
     )
 
+    # ① Cloudy 过采样 2×：困难样本（当前 Macro F1 仅 0.54）需更多曝光
+    #    在 train_idx 中追加一份 cloudy 的所有训练样本
+    class_to_idx_map = full_dataset.class_to_idx
+    if "cloudy" in class_to_idx_map:
+        cloudy_label = class_to_idx_map["cloudy"]
+        cloudy_train_idx = [i for i in train_idx if full_dataset.targets[i] == cloudy_label]
+        oversample_count = len(cloudy_train_idx)  # 1× 追加 → 总共 2×
+        train_idx = np.concatenate([train_idx, cloudy_train_idx])
+        print(f"Cloudy oversampling: {oversample_count} → {oversample_count * 2} "
+              f"({oversample_count} duplicated, 2×)")
+
     # 分别创建两个 ImageFolder 实例（不同 transform）+ Subset
     train_ds = torch.utils.data.Subset(
         ImageFolder(root, transform=get_train_transforms(size)),

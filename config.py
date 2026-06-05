@@ -64,7 +64,7 @@ CONFIG = {
     #           2. dict {path, class_map}（手动映射：foggy→haze, snowy→snow）
     #   支持 .zip 文件（自动解压到临时目录）
     "data_roots": "auto",
-    "writable_root": "_data/weather",  # 将只读数据集合并复制到此可写目录（Mo 平台不允许 . 开头的文件/目录）
+    "writable_root": "_data/weather",  # 将只读数据集合并复制到此可写目录
     # 类名别名表：自动发现时，将不同命名的类目录映射到标准 class_names（形容词）
     "class_aliases": {
         # ---- foggy 的别名（雾 / 能见度降低类） ----
@@ -125,7 +125,9 @@ CONFIG = {
     "scheduler": "cosine",        # cosine / plateau
     "label_smoothing": 0.1,
     "use_focal_loss": True,       # 处理类别不平衡
-    "focal_gamma": 2.0,
+    "focal_gamma": 1.0,            # 降为 1，让困难样本（cloudy）拿到梯度
+    "sam_rho": 0.05,               # SAM 优化器扰动半径（平坦极小值 → 泛化好）
+    "ema_decay": 0.999,            # EMA 权重指数滑动平均衰减
 
     # ---- 推理 ----
     "inference_device": "cpu",           # 比赛评测用 CPU 推理
