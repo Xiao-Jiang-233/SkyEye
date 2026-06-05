@@ -87,7 +87,7 @@ class DistillationTrainer:
         """从 timm feature_info 解析 KD 使用的 block 索引，用于对齐 hook 特征。
 
         timm feature_info 中 module 字段格式为 'blocks.N'，从中提取 N 作为索引。
-        B5 features_only=False 时 entries 无 'index' 字段，需从 module 字符串解析。
+        B4 features_only=False 时 entries 无 'index' 字段，需从 module 字符串解析。
         """
         info = getattr(self.teacher.backbone, 'feature_info', None)
         if info is None:
