@@ -105,9 +105,11 @@ CONFIG = {
     "use_tb": True,              # TensorBoard 日志（需 pip install tensorboard）
     "num_workers": _auto_num_workers(),  # 自适应：Win→0, Linux→min(4, cpu//2)
     "scheduler": "cosine",        # cosine / plateau
-    "label_smoothing": 0.1,
+    "label_smoothing": 0.0,  # 关闭：FocalLoss 自带 max-entropy 正则化 (NeurIPS 2020)
+    # 且 LS 与 FL 梯度机制冲突 (NeurIPS 2021) + LS 教师损害 KD 软标签 (Müller, NeurIPS 2019)
     "use_focal_loss": True,       # 处理类别不平衡
     "focal_gamma": 1.0,            # 降为 1，让困难样本（cloudy）拿到梯度
+    "mixup_alpha": 0.2,            # MixUp 混合强度 (Zhang et al., ICLR 2018)；0.0=关闭
     "sam_rho": 0.05,               # SAM 优化器扰动半径（平坦极小值 → 泛化好）
     "ema_decay": 0.99997,          # EMA 衰减，平滑窗口 ~33k steps ≈ 7 epochs
 

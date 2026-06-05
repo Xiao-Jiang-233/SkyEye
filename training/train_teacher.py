@@ -26,6 +26,39 @@ from data.dataset import create_dataloaders, compute_class_weights
 from utils.logger import TrainLogger
 
 
+# ============================================================
+# MixUp 数据增强 (Zhang et al., ICLR 2018)
+# ============================================================
+def mixup_data(x, y, alpha=0.2):
+    """
+    MixUp: x̃ = λ·xᵢ + (1-λ)·xⱼ, ỹ = λ·yᵢ + (1-λ)·yⱼ
+
+    λ ~ Beta(α, α)，α 控制混合强度：
+      - α → 0: 趋近原始样本（弱正则化）
+      - α = 0.2: ImageNet 标准值
+      - α = 1.0: Uniform(0,1)，最强正则化
+
+    Args:
+        x: Tensor (B, C, H, W) — 输入图像批次
+        y: Tensor (B,) — 标签（类索引）
+        alpha: float — Beta 分布参数，0.0 关闭 MixUp
+
+    Returns:
+        mixed_x: Tensor — 混合后的图像
+        y_a, y_b: Tensor — 两个原始标签
+        lam: float — λ 权重
+    """
+    if alpha > 0:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1.0
+    batch_size = x.size(0)
+    index = torch.randperm(batch_size, device=x.device)
+    mixed_x = lam * x + (1 - lam) * x[index]
+    y_a, y_b = y, y[index]
+    return mixed_x, y_a, y_b, lam
+
+
 class FocalLoss(nn.Module):
     """
     Focal Loss for 类别不平衡 + label smoothing
@@ -272,9 +305,11 @@ def train_teacher():
 
     sam_start_epoch = cfg["teacher_epochs"] - 5  # 后 5 轮启用 SAM，给足 Phase I+II 收敛时间
     overfit_warn_threshold = 0.05  # train_f1 - val_f1 > 5% 时告警
+    mixup_alpha = cfg.get("mixup_alpha", 0.0)  # MixUp 混合强度 (Zhang et al., ICLR 2018)
 
     print(f"\nDRW schedule: epoch 0-{drw_start_epoch-1} standard, epoch {drw_start_epoch}-{cfg['teacher_epochs']-1} cloudy oversample")
-    print(f"SAM schedule: epoch 0-{sam_start_epoch-1} Fast, epoch {sam_start_epoch}-{cfg['teacher_epochs']-1} SAM\n")
+    print(f"SAM schedule: epoch 0-{sam_start_epoch-1} Fast, epoch {sam_start_epoch}-{cfg['teacher_epochs']-1} SAM")
+    print(f"MixUp: {'alpha=' + str(mixup_alpha) if mixup_alpha > 0 else 'OFF'}\n")
 
     for epoch in range(cfg["teacher_epochs"]):
         use_sam = epoch >= sam_start_epoch
@@ -286,6 +321,8 @@ def train_teacher():
             mode_parts.append("Fast")
         if use_os:
             mode_parts.append("OS")
+        if mixup_alpha > 0:
+            mode_parts.append("MU")
         mode_tag = "+".join(mode_parts)
 
         # DRW: 根据阶段选择 DataLoader
@@ -299,40 +336,43 @@ def train_teacher():
         for images, labels in pbar:
             images, labels = images.to(device), labels.to(device)
 
+            # ⑥ MixUp: 生成虚拟混合样本 (Zhang et al., ICLR 2018)
+            mixed_images, labels_a, labels_b, lam = mixup_data(images, labels, mixup_alpha)
+
             if use_sam:
-                # ---- SAM first pass: standard forward-backward ----
+                # ---- SAM first pass: MixUp forward-backward ----
                 sam.zero_grad()
                 with autocast('cuda', dtype=torch.bfloat16, enabled=use_amp):
-                    logits = teacher(images)
-                    loss = criterion(logits, labels)
+                    logits = teacher(mixed_images)
+                    loss = lam * criterion(logits, labels_a) + (1 - lam) * criterion(logits, labels_b)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
                 sam.first_step()
                 base_optimizer.zero_grad()
 
-                # ---- SAM second pass: perturbed forward-backward ----
+                # ---- SAM second pass: perturbed MixUp forward-backward ----
                 with autocast('cuda', dtype=torch.bfloat16, enabled=use_amp):
-                    logits_perturbed = teacher(images)
-                    loss_perturbed = criterion(logits_perturbed, labels)
+                    logits_perturbed = teacher(mixed_images)
+                    loss_perturbed = lam * criterion(logits_perturbed, labels_a) + (1 - lam) * criterion(logits_perturbed, labels_b)
                 loss_perturbed.backward()
                 torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
                 sam.second_step()
 
-                # 用 first pass（未扰动）的预测做监控
+                # 用 first pass（未扰动）的预测做监控（labels_a 为主标签）
                 train_preds.extend(logits.argmax(dim=1).cpu().numpy())
-                train_labels_list.extend(labels.cpu().numpy())
+                train_labels_list.extend(labels_a.cpu().numpy())
             else:
-                # ---- Fast mode: 单次 forward-backward ----
+                # ---- Fast mode: MixUp forward-backward ----
                 base_optimizer.zero_grad()
                 with autocast('cuda', dtype=torch.bfloat16, enabled=use_amp):
-                    logits = teacher(images)
-                    loss = criterion(logits, labels)
+                    logits = teacher(mixed_images)
+                    loss = lam * criterion(logits, labels_a) + (1 - lam) * criterion(logits, labels_b)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
                 base_optimizer.step()
 
                 train_preds.extend(logits.argmax(dim=1).cpu().numpy())
-                train_labels_list.extend(labels.cpu().numpy())
+                train_labels_list.extend(labels_a.cpu().numpy())
 
             # ⑤ EMA 更新（每步）
             ema.update(teacher)
