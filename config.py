@@ -10,9 +10,11 @@ import sys
 # 必须在导入 timm / huggingface_hub 之前设置
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
-# 限制每个 worker 的线程数，防止 DataLoader 多进程时 CPU 线程爆炸
-os.environ.setdefault("OMP_NUM_THREADS", "2")
-os.environ.setdefault("MKL_NUM_THREADS", "2")
+# 限制每个 worker 的 OpenMP/MKL 线程数，按 CPU 核心数自适应
+# total = num_workers × OMP_NUM_THREADS，留一半给系统和 GPU 驱动
+_omp_threads = str(min(8, max(2, (os.cpu_count() or 4) // 4)))
+os.environ.setdefault("OMP_NUM_THREADS", _omp_threads)
+os.environ.setdefault("MKL_NUM_THREADS", _omp_threads)
 
 import torch
 
@@ -55,23 +57,15 @@ CONFIG = {
         "smog": "foggy",          # 雾霾
         # ---- snowy 的别名（冰雪 / 冻结降水类） ----
         "snow": "snowy",
-        "frost": "snowy",         # 霜冻 → 冰晶
-        "glaze": "snowy",         # 雨凇 → 冻雨冰壳
         # ---- rainy 的别名 ----
         "rain": "rainy",
         # ---- thundery 的别名（雷暴 / 强对流类） ----
         "thunder": "thundery",
         "thunderstorm": "thundery",
         "lightning": "thundery",  # 闪电
-        "hail": "thundery",       # 冰雹 → 强对流产物
-        # ---- sunny 的别名（晴 / 好天气类） ----
-        "rainbow": "sunny",       # 彩虹 → 需阳光，雨后晴天现象
     },
-    "num_classes": 6,  # 当前仅训练 6 类（dew/rime/sandstorm 暂缓）
-    "class_names": ["cloudy", "dew", "foggy", "rainy", "rime", "sandstorm", "snowy", "sunny", "thundery"],
-    # 暂时跳过的类：主数据集（weather_classification）中没有这些类型，训练时忽略
-    # 当主数据集扩展后，从此列表中移除即可启用
-    "skip_classes": ["dew", "rime", "sandstorm"],
+    "class_names": ["cloudy", "foggy", "rainy", "snowy", "sunny", "thundery", "other"],
+    "skip_classes": ["other"],
     "img_size": 380,               # EfficientNet-B4 原生分辨率
     "batch_size": 8,              # 手动指定，8GB 显存 + B4@380 的稳妥值
     "val_split": 0.15,             # 验证集比例
@@ -124,3 +118,5 @@ CONFIG = {
     "onnx_path": "results/weather_model.onnx",
     "onnx_int8_path": "results/weather_model_int8.onnx",
 }
+
+CONFIG["num_classes"] = len(CONFIG["class_names"]) - len(CONFIG["skip_classes"])
