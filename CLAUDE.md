@@ -25,20 +25,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 目录结构
 
-| 路径 | 用途 |
-|---|---|
-| `main.ipynb` | Jupyter Notebook 入口，按阶段调用各 .py 模块 |
-| `scripts/local_train.py` | CLI 脚本（分阶段运行训练管线） |
-| `scripts/eval_full.py` | 全量 60k 数据集评估脚本 |
-| `scripts/run.sh` | Linux/macOS/Git Bash 快捷启动脚本 |
-| `scripts/run.bat` | Windows CMD 快捷启动脚本 |
-| `scripts/run.ps1` | Windows PowerShell 快捷启动脚本 |
-| `datasets/` | 导入的数据集，**只读**，通过 `prepare_data()` 复制到可写目录 |
-| `results/` | 训练结果和模型检查点存放处 |
-| `results/tb_results/` | TensorBoard 日志存放处 |
-| `_OVERVIEW.md` | 项目介绍，**从 README.md 自动同步**，请勿手动编辑，修改 README.md 后 `cp README.md _OVERVIEW.md` 即可 |
-| `docs/接口文档.md` | 模块 API 接口文档 |
-| `app_spec.yml` | 定义模型输入输出，用于部署服务（待创建） |
+| 路径                     | 用途                                                                           |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| `main.ipynb`             | Jupyter Notebook 入口，按阶段调用各 .py 模块                                   |
+| `scripts/local_train.py` | CLI 脚本（分阶段运行训练管线）                                                 |
+| `scripts/eval_full.py`   | 全量 60k 数据集评估脚本                                                        |
+| `scripts/run.sh`         | Linux/macOS/Git Bash 快捷启动脚本                                              |
+| `scripts/run.bat`        | Windows CMD 快捷启动脚本                                                       |
+| `scripts/run.ps1`        | Windows PowerShell 快捷启动脚本                                                |
+| `datasets/`              | 导入的数据集，**只读**，通过 `prepare_data()` 复制到可写目录                   |
+| `results/`               | 训练结果和模型检查点存放处                                                     |
+| `results/tb_results/`    | TensorBoard 日志存放处                                                         |
+| `_OVERVIEW.md`           | 项目介绍，**从 README.md 自动同步**，请勿手动编辑，修改 README.md 后 pull 即可 |
+| `docs/接口文档.md`       | 模块 API 接口文档                                                              |
+| `app_spec.yml`           | 定义模型输入输出，用于部署服务（待创建）                                       |
 
 ## 已导入的数据集
 
@@ -46,13 +46,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `datasets/<hash>/weather_classification/` — 6 类 × 各 10,000 张 = 共 **60,000 张**天气图片，按类别分目录存放：
 
-| 目录 | 数量 | 中文 |
-| --- | --- | --- |
-| `cloudy/` | 10,000 | 多云 |
-| `foggy/` | 10,000 | 雾霾 |
-| `rainy/` | 10,000 | 雨天 |
-| `snowy/` | 10,000 | 雪天 |
-| `sunny/` | 10,000 | 晴天 |
+| 目录        | 数量   | 中文 |
+| ----------- | ------ | ---- |
+| `cloudy/`   | 10,000 | 多云 |
+| `foggy/`    | 10,000 | 雾霾 |
+| `rainy/`    | 10,000 | 雨天 |
+| `snowy/`    | 10,000 | 雪天 |
+| `sunny/`    | 10,000 | 晴天 |
 | `thundery/` | 10,000 | 雷暴 |
 
 > ⚠️ 类名统一使用形容词形式（cloudy/dew/foggy/rainy/rime/sandstorm/snowy/sunny/thundery），
@@ -62,16 +62,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `datasets/jehanbhathena/weather-dataset.zip` — 6,862 张，11 个细分类别，通过 `class_aliases` 映射到 9 个目标类（其中 3 类暂缓）：
 
-| 原始类 | 映射到 | 数量 | 状态 |
-| --- | --- | --- | --- |
-| dew | dew | 698 | ⏭ skip |
-| fogsmog | foggy | 851 | ✓ |
-| rime | rime | 1,160 | ⏭ skip |
-| sandstorm | sandstorm | 692 | ⏭ skip |
-| frost, glaze, snow | snowy | 1,735 | ✓ |
-| hail, lightning | thundery | 968 | ✓ |
-| rain | rainy | 526 | ✓ |
-| rainbow | sunny | 232 | ✓ |
+| 原始类             | 映射到    | 数量  | 状态   |
+| ------------------ | --------- | ----- | ------ |
+| dew                | dew       | 698   | ⏭ skip |
+| fogsmog            | foggy     | 851   | ✓      |
+| rime               | rime      | 1,160 | ⏭ skip |
+| sandstorm          | sandstorm | 692   | ⏭ skip |
+| frost, glaze, snow | snowy     | 1,735 | ✓      |
+| hail, lightning    | thundery  | 968   | ✓      |
+| rain               | rainy     | 526   | ✓      |
+| rainbow            | sunny     | 232   | ✓      |
 
 > dew/rime/sandstorm 通过 `skip_classes` 暂缓加载（主数据集无对应类）。移除 `skip_classes` 中条目即可启用。
 
@@ -163,13 +163,13 @@ tensorboard --logdir results/tb_results/
 pip install -r requirements.txt
 ```
 
-| 包 | 版本 |
-|---|---|
-| torch | 2.12.0 |
-| torchvision | 0.27.0 |
-| timm | 1.0.27 |
-| onnx | 1.21.0 |
-| onnxruntime | 1.26.0 |
+| 包                                        | 版本   |
+| ----------------------------------------- | ------ |
+| torch                                     | 2.12.0 |
+| torchvision                               | 0.27.0 |
+| timm                                      | 1.0.27 |
+| onnx                                      | 1.21.0 |
+| onnxruntime                               | 1.26.0 |
 | tqdm / scikit-learn / scipy / tensorboard | latest |
 
 > RTX 5070（Blackwell）驱动 ≥596 支持 CUDA 13.0，与 cu130 索引完全兼容。
