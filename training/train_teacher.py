@@ -219,8 +219,14 @@ def train_teacher():
     device = torch.device(cfg["device"])
     print(f"Using device: {device}")
 
-    # 1) 数据加载（含 cloudy 过采样）
-    train_loader, val_loader, class_counts = create_dataloaders()
+    # 1) 数据加载（DRW: 两个训练集，前 60% epoch 不用过采样，后 40% 开启）
+    #    DRW = Deferred Re-weighting/Re-sampling（LDAM, NeurIPS 2019）
+    #    过采样从 epoch 0 开始会导致 cloudy 过度自信（高召回低精确），
+    #    延迟到后期再开启，让模型先学好特征表示，再校准决策边界
+    train_loader_std, val_loader, class_counts = create_dataloaders(cloudy_oversample=False)
+    train_loader_os, _, _ = create_dataloaders(cloudy_oversample=True)
+
+    drw_start_epoch = int(cfg["teacher_epochs"] * 0.6)  # 后 40% epoch 开启过采样
 
     # 2) 创建模型
     teacher = WeatherEfficientNet(
@@ -229,9 +235,8 @@ def train_teacher():
         pretrained=cfg["teacher_pretrained"],
     ).to(device)
 
-    # 3) 损失函数（FocalLoss + 类别权重）
-    #    ② cloudy 过采样 2× 已由 dataset.py 完成，此处仅使用逆频率权重
-    #       （过采样 + loss 额外加权叠加会造成训练不稳定）
+    # 3) 损失函数（FocalLoss + 类别权重 — 始终用原始分布计算 alpha）
+    #    DRW 只改变采样分布，不改 loss 权重，避免叠加导致过矫正
     alpha = compute_class_weights(class_counts)
     criterion = FocalLoss(
         alpha=alpha, gamma=cfg["focal_gamma"],
@@ -268,9 +273,23 @@ def train_teacher():
     sam_start_epoch = cfg["teacher_epochs"] - 5  # 后 5 轮启用 SAM，给足 Phase I+II 收敛时间
     overfit_warn_threshold = 0.05  # train_f1 - val_f1 > 5% 时告警
 
+    print(f"\nDRW schedule: epoch 0-{drw_start_epoch-1} standard, epoch {drw_start_epoch}-{cfg['teacher_epochs']-1} cloudy oversample")
+    print(f"SAM schedule: epoch 0-{sam_start_epoch-1} Fast, epoch {sam_start_epoch}-{cfg['teacher_epochs']-1} SAM\n")
+
     for epoch in range(cfg["teacher_epochs"]):
         use_sam = epoch >= sam_start_epoch
-        mode_tag = "SAM" if use_sam else "Fast"
+        use_os = epoch >= drw_start_epoch  # DRW 延迟过采样
+        mode_parts = []
+        if use_sam:
+            mode_parts.append("SAM")
+        else:
+            mode_parts.append("Fast")
+        if use_os:
+            mode_parts.append("OS")
+        mode_tag = "+".join(mode_parts)
+
+        # DRW: 根据阶段选择 DataLoader
+        train_loader = train_loader_os if use_os else train_loader_std
 
         # --- Train ---
         teacher.train()
