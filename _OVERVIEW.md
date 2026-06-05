@@ -43,7 +43,7 @@ CPU Inference (ONNX Runtime)
 | **timm** | 1.0.27 |
 | **onnx** | 1.21.0 |
 | **onnxruntime** | 1.26.0 |
-| **平台** | [Mo Platform](https://momodel.cn) (JupyterLab + GPU) / Windows 11 + RTX 5070 本地开发 |
+| **平台** | Windows 11 + RTX 5070 (Blackwell, CUDA 12.8) |
 
 > 预训练模型下载已配置 HF 镜像 (`hf-mirror.com`)，国内可正常访问。
 
@@ -51,8 +51,7 @@ CPU Inference (ONNX Runtime)
 
 ```text
 SkyEye/
-├── main.ipynb                     # Notebook 入口，按顺序执行训练管线
-├── prepare_datasets.ipynb         # 数据集准备（备用）
+├── main.ipynb                     # Jupyter Notebook 入口，按顺序执行训练管线
 ├── config.py                      # 超参数统一管理 + HF 镜像配置
 ├── data/
 │   ├── augmentations.py           # Train/Val 增强策略 (RandAugment)
@@ -69,7 +68,7 @@ SkyEye/
 │   └── infer.py                   # 单张/批量推理
 └── utils/
     ├── metrics.py                 # F1 / 混淆矩阵 / 分类报告
-    └── logger.py                  # TensorBoard + Mo 平台 JSON 日志
+    └── logger.py                  # TensorBoard 日志
 ```
 
 ## 数据集
@@ -78,7 +77,7 @@ SkyEye/
 
 数据源合并到 `_data/weather/`（不入 git），支持多源自动合并 + 类名映射。
 
-> Mo 平台不允许 `.` 开头的文件/目录，故使用 `_data/` 前缀。
+> 数据集目录使用 `_data/` 前缀，已在 `.gitignore` 中排除。
 
 ## 训练流程（70 分钟 GPU 时限）
 
@@ -107,7 +106,7 @@ SCALARS 页可对比各阶段的 loss / F1 / Accuracy 曲线。
 pip install -r requirements.txt
 ```
 
-Notebook 中直接执行 Cell 1 即可。
+Jupyter Notebook 中按顺序执行各 Cell，或使用 CLI：`python scripts/local_train.py all`。
 
 ## 相关文档
 

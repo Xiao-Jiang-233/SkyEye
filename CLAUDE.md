@@ -4,8 +4,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-这是一个 [Mo 平台](https://momodel.cn) 上的机器学习项目。Mo 平台是一个内嵌 JupyterLab 的在线 IDE，支持 GPU 训练和模型部署。
-
 项目名：**SkyEye**，九类天气图片分类任务（cloudy, dew, foggy, rainy, rime, sandstorm, snowy, sunny, thundery），当前训练启用 6 类（dew/rime/sandstorm 通过 skip_classes 暂缓）。
 技术方案：EfficientNet-B5（教师）→ 知识蒸馏 → EfficientNet-B0（学生）→ 结构化剪枝 → ONNX 导出 → INT8 量化。
 比赛约束：GPU 训练 → CPU 推理，总时限 70 分钟。
@@ -13,41 +11,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 开发环境
 
-### Mo 平台（云端 Linux）
-
-- **运行时环境**: Python 3.13.13 | PyTorch 2.8.0+cu128 | CUDA (Mo 平台 GPU)
-- 开发方式：纯模块化 `.py` 文件 + `main.ipynb` 作为入口调用，`prepare_datasets.ipynb` 备用
+- **操作系统**: Windows 11
+- **GPU**: RTX 5070（Blackwell，CUDA 12.8）
+- **运行时环境**: Python 3.13.x | PyTorch 2.8.0+cu128 | CUDA
+- **虚拟环境**: `.venv/`（已在 `.gitignore` 中排除）
+- 开发方式：纯模块化 `.py` 文件，`main.ipynb` 作为 Jupyter 入口，`scripts/local_train.py` 作为 CLI 入口
 - 模块结构：`config.py`（超参数）→ `data/`（加载+增强）→ `models/`（EfficientNet封装+蒸馏）→ `training/`（教师训练+蒸馏+剪枝微调）→ `inference/`（ONNX导出+INT8量化+CPU推理）→ `utils/`（指标+日志）
-- Python 包管理：`!pip install <package>`（在 Notebook cell 中直接运行）
-- 运行代码：`Shift + Enter`
-
-### 本地开发（Windows 11）
-
-- **运行时环境**: Python 3.13.x | PyTorch 2.8.0+cu128 | CUDA (RTX 5070)
-- **虚拟环境**: `.venv/`（已在 `.gitignore` 中排除），通过 pip 直接安装依赖
-- 开发方式：纯模块化 `.py` 文件，通过 `scripts/local_train.py` CLI 运行
 - **Windows 特别说明**：
-  - `num_workers` 自动设为 `0`（`config.py` 中检测 `sys.platform`），避免 multiprocessing spawn 卡死
-  - `pin_memory` 自动检测 CUDA 可用性，CPU 上自动关闭
-  - 混合精度（`fp16`）仅在 CUDA 上生效，CPU 上自动跳过
-  - 数据集路径 `data_root` 需要根据本地实际情况修改（Mo 平台的 hash 路径在本地不存在）
+  - `num_workers` 自动设为 2（`config.py` 检测 `sys.platform`），避免 multiprocessing spawn 卡死
+  - `pin_memory` 自动检测 CUDA 可用性
+  - 混合精度（BF16）仅在 CUDA 上生效，CPU 上自动跳过
+  - 数据集路径通过 `config.py` 中的 `data_roots: "auto"` 自动发现
 
 ## 目录结构
 
 | 路径 | 用途 |
 |---|---|
-| `main.ipynb` | Notebook 入口，分阶段调用各 .py 模块（使用 `!cp -R` / `!7zx` 预处理数据） |
-| `prepare_datasets.ipynb` | 数据集准备（备用），日常训练直接用 `main.ipynb` |
-| `scripts/local_train.py` | 本地开发 CLI 脚本（分阶段运行训练管线） |
+| `main.ipynb` | Jupyter Notebook 入口，按阶段调用各 .py 模块 |
+| `scripts/local_train.py` | CLI 脚本（分阶段运行训练管线） |
 | `scripts/run.sh` | Linux/macOS/Git Bash 快捷启动脚本 |
 | `scripts/run.bat` | Windows CMD 快捷启动脚本 |
 | `scripts/run.ps1` | Windows PowerShell 快捷启动脚本 |
-| `datasets/` | 导入的数据集，**只读**，需复制到其他目录才能修改 |
+| `datasets/` | 导入的数据集，**只读**，通过 `prepare_data()` 复制到可写目录 |
 | `results/` | 训练结果和模型检查点存放处 |
 | `results/tb_results/` | TensorBoard 日志存放处 |
 | `_OVERVIEW.md` | 项目介绍，**从 README.md 自动同步**，请勿手动编辑，修改 README.md 后 `cp README.md _OVERVIEW.md` 即可 |
 | `docs/接口文档.md` | 模块 API 接口文档 |
-
 | `app_spec.yml` | 定义模型输入输出，用于部署服务（待创建） |
 
 ## 已导入的数据集
@@ -118,44 +107,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 常用命令
 
-### Mo 平台（Notebook cell 中执行）
-
-```bash
-# 列出已安装的包
-!pip list --format=columns
-
-# 检查某个包是否存在
-!pip show <package_name>
-
-# 安装包
-!pip install <package_name>
-
-# 更新包
-!pip install <package_name> --upgrade
-
-# 解压 zip 文件
-!7zx file_name.zip
-
-# 复制数据集到可写目录
-!cp -R ./datasets/<imported_dataset> ./<your_folder>
-
-# 查看当前目录内容
-ls
-
-# TensorBoard 可视化
-!tensorboard --logdir results/tb_results/ --bind_all --port 6006
-
-# 本地开发：分阶段运行训练管线
-python scripts/local_train.py check     # 检查环境
-python scripts/local_train.py teacher   # 训练教师
-python scripts/local_train.py distill   # 仅知识蒸馏
-python scripts/local_train.py prune     # 仅剪枝 + 微调
-python scripts/local_train.py export    # 仅 ONNX 导出 + 量化 + 测速
-python scripts/local_train.py all       # 完整管线
-```
-
-### 本地开发（Windows）
-
 ```bash
 # 创建虚拟环境（首次）
 python -m venv .venv
@@ -175,7 +126,7 @@ scripts\run.bat check          # CMD
 
 # 或直接调用 Python
 python scripts/local_train.py check     # 检查环境
-python scripts/local_train.py teacher   # 训练教师（CPU 上会很慢）
+python scripts/local_train.py teacher   # 训练教师
 python scripts/local_train.py distill   # 仅知识蒸馏
 python scripts/local_train.py prune     # 仅剪枝 + 微调
 python scripts/local_train.py export    # 仅 ONNX 导出 + 量化 + 测速
@@ -188,24 +139,17 @@ python -m inference.infer <image_path>
 tensorboard --logdir results/tb_results/
 ```
 
-> ⚠️ **Windows 注意**：本地没有 GPU，训练极慢。建议仅在 Windows 上做代码开发和调试，
-> 实际训练在 Mo 平台 GPU 环境执行。`data_root` 路径需要根据本地数据集位置修改 `config.py`。
-> 数据集自动合并到 `writable_root`（默认 `_data/weather/`），此目录在 `.gitignore` 中已排除。
-
 ## 注意事项
 
 - **`_OVERVIEW.md` 是 `README.md` 的镜像文件，修改项目概述时只改 `README.md`，完成后 `cp README.md _OVERVIEW.md` 同步即可**
-- 比赛约束：GPU 训练 + CPU 推理，总时限 70 分钟（epoch 已缩减适配）
 - 类名统一使用形容词：数据集目录可能用名词（`haze`, `snow`, `thunder`），`class_aliases` 自动映射到 `foggy`, `snowy`, `thundery`
 - `datasets/` 目录是只读的，不可直接修改其中的文件
-- **Mo 平台不允许 `.` 开头的文件/目录**，故使用 `_data/` 而非 `.data/`
 - 预训练模型下载已配置 HF 镜像：`config.py` 中 `HF_ENDPOINT=https://hf-mirror.com`
-- 运行 job 训练时，结果务必指定输出到 `results/` 目录
-- 项目部署需创建 `app_spec.yml` 定义输入输出接口
-- `.localenv/` 和 `.venv/` 是本地虚拟环境目录（已在 `.gitignore` 中排除）
-- **Windows**：`num_workers` 自动设为 0（`config.py` 检测 `sys.platform`），`pin_memory` 自动适配
-- **Windows**：`fp16` 混合精度仅在 CUDA 上生效，CPU 训练自动跳过
-- **Windows**：训练前需修改 `config.py` 中的 `data_root` 为本地数据集路径
+- 训练结果务必指定输出到 `results/` 目录
+- `.venv/` 是本地虚拟环境目录（已在 `.gitignore` 中排除）
+- **Windows**：`num_workers` 自动适配（`config.py` 检测 `sys.platform`），`pin_memory` 自动适配
+- **Windows**：`fp16`/BF16 混合精度仅在 CUDA 上生效，CPU 训练自动跳过
+- BF16 autocast 用于训练（RTX 5070 原生支持，无需 GradScaler）
 
 ## 核心依赖
 
@@ -214,8 +158,6 @@ tensorboard --logdir results/tb_results/
 ```bash
 pip install -r requirements.txt
 ```
-
-Notebook 中直接执行 Cell 1。
 
 | 包 | 版本 |
 |---|---|
