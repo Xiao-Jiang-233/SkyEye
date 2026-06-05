@@ -1,6 +1,6 @@
 # SkyEye — 天气图片分类
 
-基于 **EfficientNet-B5 → 知识蒸馏 → B0 → 结构化剪枝 → ONNX → INT8 量化** 的九类天气分类管线。
+基于 **EfficientNet-B4 → 知识蒸馏 → B0 → 结构化剪枝 → ONNX → INT8 量化** 的九类天气分类管线。
 
 ## 功能
 
@@ -21,7 +21,7 @@
 ## 技术方案
 
 ```text
-EfficientNet-B5 (Teacher)
+EfficientNet-B4 (Teacher)
     ↓ Knowledge Distillation (软标签 + 特征对齐)
 EfficientNet-B0 (Student)
     ↓ Structured Pruning (渐进 2 轮: 20% → 40%)
@@ -38,12 +38,12 @@ CPU Inference (ONNX Runtime)
 | 组件 | 版本 |
 | --- | --- |
 | **Python** | 3.13.13 |
-| **PyTorch** | 2.8.0+cu128 |
-| **torchvision** | 0.23.0+cu128 |
+| **PyTorch** | 2.12.0 |
+| **torchvision** | 0.27.0 |
 | **timm** | 1.0.27 |
 | **onnx** | 1.21.0 |
 | **onnxruntime** | 1.26.0 |
-| **平台** | Windows 11 + RTX 5070 (Blackwell, CUDA 12.8) |
+| **平台** | Windows 11 + RTX 5070 (Blackwell, CUDA 13.0) |
 
 > 预训练模型下载已配置 HF 镜像 (`hf-mirror.com`)，国内可正常访问。
 
@@ -52,6 +52,9 @@ CPU Inference (ONNX Runtime)
 ```text
 SkyEye/
 ├── main.ipynb                     # Jupyter Notebook 入口，按顺序执行训练管线
+├── scripts/
+│   ├── local_train.py             # CLI 训练入口（分阶段运行）
+│   └── eval_full.py               # 全量数据集评估
 ├── config.py                      # 超参数统一管理 + HF 镜像配置
 ├── data/
 │   ├── augmentations.py           # Train/Val 增强策略 (RandAugment)
@@ -83,8 +86,8 @@ SkyEye/
 
 | 阶段 | 内容 | 预估耗时 |
 |------|------|----------|
-| 1. Train Teacher | EfficientNet-B5, 10 epochs, FocalLoss | ~30 min |
-| 2. Knowledge Distillation | B5 → B0, 15 epochs, T=4, α=0.7 | ~15 min |
+| 1. Train Teacher | EfficientNet-B4, 15 epochs, FocalLoss | ~30 min |
+| 2. Knowledge Distillation | B4 → B0, 15 epochs, T=4, α=0.7 | ~15 min |
 | 3. Structured Pruning | 渐进 2 轮 (20%→40%) + Fine-tune 5 epoch × 2 | ~5 min |
 | 4. ONNX Export + INT8 | FP32 → ONNX → INT8 动态量化 | ~3 min |
 | 5. CPU Inference | ONNX Runtime CPUExecutionProvider | <100ms/img |

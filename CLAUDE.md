@@ -5,15 +5,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 项目概述
 
 项目名：**SkyEye**，九类天气图片分类任务（cloudy, dew, foggy, rainy, rime, sandstorm, snowy, sunny, thundery），当前训练启用 6 类（dew/rime/sandstorm 通过 skip_classes 暂缓）。
-技术方案：EfficientNet-B5（教师）→ 知识蒸馏 → EfficientNet-B0（学生）→ 结构化剪枝 → ONNX 导出 → INT8 量化。
+技术方案：EfficientNet-B4（教师）→ 知识蒸馏 → EfficientNet-B0（学生）→ 结构化剪枝 → ONNX 导出 → INT8 量化。
 比赛约束：GPU 训练 → CPU 推理，总时限 70 分钟。
 设计文档：`docs/superpowers/specs/2026-06-03-efficientnet-kd-pruning-design.md`
 
 ## 开发环境
 
 - **操作系统**: Windows 11
-- **GPU**: RTX 5070（Blackwell，CUDA 12.8）
-- **运行时环境**: Python 3.13.x | PyTorch 2.8.0+cu128 | CUDA
+- **GPU**: RTX 5070（Blackwell，CUDA 13.0 / cu130）
+- **运行时环境**: Python 3.13.x | PyTorch 2.12.0+cu130 | CUDA
 - **虚拟环境**: `.venv/`（已在 `.gitignore` 中排除）
 - 开发方式：纯模块化 `.py` 文件，`main.ipynb` 作为 Jupyter 入口，`scripts/local_train.py` 作为 CLI 入口
 - 模块结构：`config.py`（超参数）→ `data/`（加载+增强）→ `models/`（EfficientNet封装+蒸馏）→ `training/`（教师训练+蒸馏+剪枝微调）→ `inference/`（ONNX导出+INT8量化+CPU推理）→ `utils/`（指标+日志）
@@ -29,6 +29,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 |---|---|
 | `main.ipynb` | Jupyter Notebook 入口，按阶段调用各 .py 模块 |
 | `scripts/local_train.py` | CLI 脚本（分阶段运行训练管线） |
+| `scripts/eval_full.py` | 全量 60k 数据集评估脚本 |
 | `scripts/run.sh` | Linux/macOS/Git Bash 快捷启动脚本 |
 | `scripts/run.bat` | Windows CMD 快捷启动脚本 |
 | `scripts/run.ps1` | Windows PowerShell 快捷启动脚本 |
@@ -135,6 +136,9 @@ python scripts/local_train.py all       # 完整管线
 # 单张图片推理
 python -m inference.infer <image_path>
 
+# 全量数据集评估
+python scripts/eval_full.py
+
 # TensorBoard 可视化
 tensorboard --logdir results/tb_results/
 ```
@@ -153,7 +157,7 @@ tensorboard --logdir results/tb_results/
 
 ## 核心依赖
 
-基准版本：**torch 2.8.0+cu128 / torchvision 0.23.0+cu128**
+基准版本：**torch 2.12.0 / torchvision 0.27.0**
 
 ```bash
 pip install -r requirements.txt
@@ -161,11 +165,11 @@ pip install -r requirements.txt
 
 | 包 | 版本 |
 |---|---|
-| torch | 2.8.0+cu128 |
-| torchvision | 0.23.0+cu128 |
+| torch | 2.12.0 |
+| torchvision | 0.27.0 |
 | timm | 1.0.27 |
 | onnx | 1.21.0 |
 | onnxruntime | 1.26.0 |
 | tqdm / scikit-learn / scipy / tensorboard | latest |
 
-> RTX 5070（Blackwell）驱动 ≥596 支持 CUDA 12.8，与 cu128 索引完全兼容。
+> RTX 5070（Blackwell）驱动 ≥596 支持 CUDA 13.0，与 cu130 索引完全兼容。
