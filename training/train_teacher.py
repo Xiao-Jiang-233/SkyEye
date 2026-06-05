@@ -265,7 +265,8 @@ def train_teacher():
     # BF16: 与 FP32 相同动态范围，无需 GradScaler，RTX 5070+ 原生支持
     use_amp = cfg["fp16"] and torch.cuda.is_available()
 
-    sam_start_epoch = cfg["teacher_epochs"] // 2  # 前一半 epoch 不启用 SAM
+    sam_start_epoch = cfg["teacher_epochs"] - 5  # 后 5 轮启用 SAM，给足 Phase I+II 收敛时间
+    overfit_warn_threshold = 0.05  # train_f1 - val_f1 > 5% 时告警
 
     for epoch in range(cfg["teacher_epochs"]):
         use_sam = epoch >= sam_start_epoch
@@ -274,6 +275,7 @@ def train_teacher():
         # --- Train ---
         teacher.train()
         train_loss = 0.0
+        train_preds, train_labels_list = [], []  # 收集训练集预测用于过拟合监控
         pbar = tqdm(train_loader, desc=f"Teacher Epoch {epoch+1}/{cfg['teacher_epochs']} [{mode_tag}]")
         for images, labels in pbar:
             images, labels = images.to(device), labels.to(device)
@@ -296,6 +298,10 @@ def train_teacher():
                 loss_perturbed.backward()
                 torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
                 sam.second_step()
+
+                # 用 first pass（未扰动）的预测做监控
+                train_preds.extend(logits.argmax(dim=1).cpu().numpy())
+                train_labels_list.extend(labels.cpu().numpy())
             else:
                 # ---- Fast mode: 单次 forward-backward ----
                 base_optimizer.zero_grad()
@@ -306,6 +312,9 @@ def train_teacher():
                 torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
                 base_optimizer.step()
 
+                train_preds.extend(logits.argmax(dim=1).cpu().numpy())
+                train_labels_list.extend(labels.cpu().numpy())
+
             # ⑤ EMA 更新（每步）
             ema.update(teacher)
 
@@ -313,6 +322,9 @@ def train_teacher():
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
         scheduler.step()
+
+        # 计算训练集 F1（过拟合监控）
+        train_f1 = f1_score(train_labels_list, train_preds, average='macro')
 
         # --- Validate（使用 EMA 权重）---
         ema.apply_shadow(teacher)
@@ -322,11 +334,16 @@ def train_teacher():
         ema.restore(teacher)
 
         avg_loss = train_loss / len(train_loader)
-        print(f"Epoch {epoch+1}: Train Loss={avg_loss:.4f} | Val F1={val_f1:.4f} | Val Acc={val_acc:.2f}%")
+        gap = train_f1 - val_f1
+        gap_str = f"│ Gap={gap:+.4f}"
+        if gap > overfit_warn_threshold:
+            gap_str += f" ⚠️ OVERFIT"
+        print(f"Epoch {epoch+1}: Train Loss={avg_loss:.4f} "
+              f"│ Train F1={train_f1:.4f} │ Val F1={val_f1:.4f} {gap_str} │ Val Acc={val_acc:.2f}%")
 
-        # TensorBoard 记录（F1 为主监控，含 per-class）
-        logger.log_metrics("train", {"loss": avg_loss}, epoch + 1)
-        val_metrics = {"F1_Macro": val_f1, "Acc": val_acc}
+        # TensorBoard 记录（F1 为主监控，含 per-class + gap）
+        logger.log_metrics("train", {"loss": avg_loss, "F1_Macro": train_f1}, epoch + 1)
+        val_metrics = {"F1_Macro": val_f1, "Acc": val_acc, "Overfit_Gap": gap}
         for cls_name, cls_f1 in per_class_f1.items():
             val_metrics[f"F1_{cls_name}"] = cls_f1
         logger.log_metrics("val", val_metrics, epoch + 1)

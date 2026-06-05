@@ -79,7 +79,7 @@ CONFIG = {
     # ---- 教师模型 ----
     "teacher_model": "efficientnet_b4",  # timm 模型名
     "teacher_pretrained": True,
-    "teacher_epochs": 10,            # 70分钟时限下缩减至10轮
+    "teacher_epochs": 15,            # 15轮给SAM后5轮充分收敛
     "teacher_lr": 5e-5,  # 380 原生分辨率下微调，保守 LR 保护预训练特征
     "teacher_weight_decay": 1e-4,
     "warmup_epochs": 2,             # 学习率 warmup 轮数（LinearLR 0.1→1.0）
