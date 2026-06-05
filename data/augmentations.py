@@ -3,7 +3,7 @@
 import torchvision.transforms as transforms
 
 
-def get_train_transforms(img_size=456):
+def get_train_transforms(img_size=380):
     """
     训练集增强：保守几何裁剪 + 水平翻转 + 轻量 RandAugment + 归一化
 
@@ -12,7 +12,7 @@ def get_train_transforms(img_size=456):
       破坏天气判别特征（雾被增亮消失、云被色调扭曲、雨痕被锐化模糊）
 
     Args:
-        img_size: int — 输入尺寸（默认 456，EfficientNet-B5 原生分辨率）
+        img_size: int — 输入尺寸（默认 380，EfficientNet-B4 原生分辨率）
 
     Returns:
         transforms.Compose
@@ -29,7 +29,7 @@ def get_train_transforms(img_size=456):
     ])
 
 
-def get_val_transforms(img_size=456):
+def get_val_transforms(img_size=380):
     """
     验证集增强：Resize + CenterCrop + 归一化
 

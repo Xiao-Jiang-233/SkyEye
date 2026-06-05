@@ -62,7 +62,7 @@ def stage_data():
 def stage_teacher():
     """Stage:4: 训练教师模型"""
     print("=" * 50)
-    print("Stage 3/6: 训练教师模型 (EfficientNet-B5)")
+    print("Stage 3/6: 训练教师模型 (EfficientNet-B4)")
     print("=" * 50)
 
     from training.train_teacher import train_teacher
@@ -76,7 +76,7 @@ def stage_teacher():
 def stage_distill():
     """Stage:5: 知识蒸馏"""
     print("=" * 50)
-    print("Stage 4/6: 知识蒸馏 (B5 → B0)")
+    print("Stage 4/6: 知识蒸馏 (B4 → B0)")
     print("=" * 50)
 
     from training.distill_student import run_distillation

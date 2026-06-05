@@ -6,7 +6,7 @@
   ① cloudy 过采样 2×（data/dataset.py）
   ② FocalLoss γ 降为 1（config.py）—— 让困难样本拿到梯度
   ③ SAM 优化器 rho=0.05（平坦极小值 → 泛化好）
-  ④ EMA 权重指数滑动平均 decay=0.999（几乎免费）
+  ④ EMA 权重指数滑动平均 decay=0.99997（几乎免费）
   ⑤ BF16 autocast + 梯度裁剪（无需 GradScaler，RTX 5070 原生支持）
 
 输出：results/teacher_best.pth

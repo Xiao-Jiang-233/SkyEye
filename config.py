@@ -72,15 +72,15 @@ CONFIG = {
     # 暂时跳过的类：主数据集（weather_classification）中没有这些类型，训练时忽略
     # 当主数据集扩展后，从此列表中移除即可启用
     "skip_classes": ["dew", "rime", "sandstorm"],
-    "img_size": 456,               # EfficientNet-B5 原生分辨率
-    "batch_size": 8,              # 手动指定，8GB 显存 + B5@456 的稳妥值
+    "img_size": 380,               # EfficientNet-B4 原生分辨率
+    "batch_size": 8,              # 手动指定，8GB 显存 + B4@380 的稳妥值
     "val_split": 0.15,             # 验证集比例
 
     # ---- 教师模型 ----
-    "teacher_model": "efficientnet_b5",  # timm 模型名
+    "teacher_model": "efficientnet_b4",  # timm 模型名
     "teacher_pretrained": True,
     "teacher_epochs": 10,            # 70分钟时限下缩减至10轮
-    "teacher_lr": 5e-5,  # 456 原生分辨率下微调，保守 LR 保护预训练特征
+    "teacher_lr": 5e-5,  # 380 原生分辨率下微调，保守 LR 保护预训练特征
     "teacher_weight_decay": 1e-4,
     "warmup_epochs": 2,             # 学习率 warmup 轮数（LinearLR 0.1→1.0）
 

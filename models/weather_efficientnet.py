@@ -14,7 +14,7 @@ class WeatherEfficientNet(nn.Module):
     用于知识蒸馏中的特征对齐。
 
     Args:
-        model_name: str — timm 模型名 (e.g. "efficientnet_b0", "efficientnet_b5")
+        model_name: str — timm 模型名 (e.g. "efficientnet_b0", "efficientnet_b4")
         num_classes: int — 分类类别数
         pretrained: bool — 是否加载 ImageNet 预训练权重
     """
@@ -30,7 +30,7 @@ class WeatherEfficientNet(nn.Module):
             features_only=False,
         )
 
-        # 获取 backbone 输出通道数 (B0=1280, B5=2048)
+        # 获取 backbone 输出通道数 (B0=1280, B4=1792)
         self.num_features = self.backbone.num_features
 
         # 自定义分类头
