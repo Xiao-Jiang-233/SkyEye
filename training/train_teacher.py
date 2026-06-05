@@ -256,8 +256,8 @@ def train_teacher():
     #    DRW = Deferred Re-weighting/Re-sampling（LDAM, NeurIPS 2019）
     #    过采样从 epoch 0 开始会导致 cloudy 过度自信（高召回低精确），
     #    延迟到后期再开启，让模型先学好特征表示，再校准决策边界
-    train_loader_std, val_loader, class_counts = create_dataloaders(cloudy_oversample=False)
-    train_loader_os, _, _ = create_dataloaders(cloudy_oversample=True)
+    train_loader_std, val_loader, class_counts, class_names = create_dataloaders(cloudy_oversample=False)
+    train_loader_os, _, _, _ = create_dataloaders(cloudy_oversample=True)
 
     drw_start_epoch = int(cfg["teacher_epochs"] * 0.6)  # 后 40% epoch 开启过采样
 
@@ -388,7 +388,7 @@ def train_teacher():
         # --- Validate（使用 EMA 权重）---
         ema.apply_shadow(teacher)
         val_f1, val_acc, per_class_f1 = evaluate(
-            teacher, val_loader, device, train_loader.dataset.dataset.classes,
+            teacher, val_loader, device, class_names,
         )
         ema.restore(teacher)
 

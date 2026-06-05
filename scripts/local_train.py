@@ -11,7 +11,7 @@
     python scripts/local_train.py export      # 仅 ONNX 导出 + 量化 + 测速
     python scripts/local_train.py check       # 仅检查环境
 
-对应 main.ipynb 中的 Cell 2-6.
+对应 main.ipynb 中的 Cell 2-6（Stage 1-6）。
 """
 import sys
 import time
@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 def stage_check():
-    """Stage:2: 检查环境和配置"""
+    """Stage 1/6: 检查环境和配置"""
     print("=" * 50)
     print("Stage 1/6: 环境检查")
     print("=" * 50)
@@ -44,23 +44,24 @@ def stage_check():
 
 
 def stage_data():
-    """Stage:3: 数据准备"""
+    """Stage 2/6: 数据准备"""
     print("=" * 50)
     print("Stage 2/6: 数据准备")
     print("=" * 50)
 
     from data.dataset import create_dataloaders
-    train_loader, val_loader, class_counts = create_dataloaders()
+    train_loader, val_loader, class_counts, class_names = create_dataloaders()
 
     print(f"Train: {len(train_loader.dataset)} samples, {len(train_loader)} batches")
     print(f"Val:   {len(val_loader.dataset)} samples, {len(val_loader)} batches")
-    print(f"Class distribution: {class_counts.astype(int)}\n")
+    print(f"Class distribution: {class_counts.astype(int)}")
+    print(f"Class names: {class_names}\n")
 
     return train_loader, val_loader
 
 
 def stage_teacher():
-    """Stage:4: 训练教师模型"""
+    """Stage 3/6: 训练教师模型"""
     print("=" * 50)
     print("Stage 3/6: 训练教师模型 (EfficientNet-B4)")
     print("=" * 50)
@@ -74,7 +75,7 @@ def stage_teacher():
 
 
 def stage_distill():
-    """Stage:5: 知识蒸馏"""
+    """Stage 4/6: 知识蒸馏"""
     print("=" * 50)
     print("Stage 4/6: 知识蒸馏 (B4 → B0)")
     print("=" * 50)
@@ -88,7 +89,7 @@ def stage_distill():
 
 
 def stage_prune():
-    """Stage:6: 结构化剪枝 + 微调"""
+    """Stage 5/6: 结构化剪枝 + 微调"""
     print("=" * 50)
     print("Stage 5/6: 结构化剪枝 + 微调")
     print("=" * 50)
@@ -102,7 +103,7 @@ def stage_prune():
 
 
 def stage_export():
-    """Stage:7: ONNX 导出 + INT8 量化 + CPU 测速"""
+    """Stage 6/6: ONNX 导出 + INT8 量化 + CPU 测速"""
     print("=" * 50)
     print("Stage 6/6: ONNX 导出 + INT8 量化 + CPU 测速")
     print("=" * 50)

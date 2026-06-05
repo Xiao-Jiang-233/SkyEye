@@ -40,10 +40,10 @@ def run_distillation():
     print("Student model created.")
 
     # 3) 数据加载
-    train_loader, val_loader, _ = create_dataloaders()
+    train_loader, val_loader, _, class_names = create_dataloaders()
 
     # 4) 蒸馏训练
-    trainer = DistillationTrainer(teacher, student, device, cfg)
+    trainer = DistillationTrainer(teacher, student, device, cfg, class_names=class_names)
     distilled_student = trainer.train(train_loader, val_loader)
 
     print(f"Distillation complete. Model saved to {cfg['distilled_ckpt']}")

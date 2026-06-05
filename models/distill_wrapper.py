@@ -52,11 +52,12 @@ class DistillationTrainer:
         cfg: dict — CONFIG 字典
     """
 
-    def __init__(self, teacher, student, device, cfg=None):
+    def __init__(self, teacher, student, device, cfg=None, class_names=None):
         self.teacher = teacher
         self.student = student
         self.device = device
         self.cfg = cfg or CONFIG
+        self.class_names = class_names  # 避免 evaluate 中链式耦合 loader.dataset.dataset.classes
 
         # 冻结教师
         self.teacher.eval()
@@ -286,7 +287,5 @@ class DistillationTrainer:
         f1 = f1_score(all_labels, all_preds, average='macro')
         per_class_f1 = f1_score(all_labels, all_preds, average=None)
         acc = (np.array(all_preds) == np.array(all_labels)).mean() * 100
-        # 从 val_loader 的底层 ImageFolder 获取类名
-        class_names = loader.dataset.dataset.classes
-        per_class_f1 = dict(zip(class_names, per_class_f1))
+        per_class_f1 = dict(zip(self.class_names, per_class_f1))
         return f1, acc, per_class_f1

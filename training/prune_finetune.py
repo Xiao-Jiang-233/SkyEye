@@ -80,14 +80,15 @@ class StructuredPruner:
         print(f"  Layers pruned:         {len(self.pruned_params)}")
         print(f"{'='*50}\n")
 
-    def make_permanent(self):
-        """将 mask 固化到权重中"""
-        for name, module in self.model.named_modules():
+    @staticmethod
+    def make_permanent(model):
+        """将 mask 固化到权重中（静态方法，无需实例化）"""
+        for _, module in model.named_modules():
             if isinstance(module, nn.Conv2d) and hasattr(module, 'weight_mask'):
                 prune.remove(module, 'weight')
 
 
-def finetune_after_prune(model, train_loader, val_loader, device, cfg, epochs, lr, tag=""):
+def finetune_after_prune(model, train_loader, val_loader, class_counts, class_names, device, cfg, epochs, lr, tag=""):
     """
     剪枝后微调：仅更新未剪枝的权重
 
@@ -95,6 +96,8 @@ def finetune_after_prune(model, train_loader, val_loader, device, cfg, epochs, l
         model: 已剪枝的模型
         train_loader: DataLoader
         val_loader: DataLoader
+        class_counts: np.ndarray — 各类别样本数（由 create_dataloaders 返回，避免重复遍历）
+        class_names: list[str] — 类别名称列表
         device: torch.device
         cfg: dict
         epochs: int
@@ -104,12 +107,6 @@ def finetune_after_prune(model, train_loader, val_loader, device, cfg, epochs, l
     Returns:
         nn.Module: 微调后的模型
     """
-    # 计算类别权重
-    class_counts = np.zeros(cfg["num_classes"])
-    for _, labels in train_loader:
-        for lbl in labels.numpy():
-            class_counts[lbl] += 1
-
     alpha = compute_class_weights(class_counts)
     criterion = FocalLoss(
         alpha=alpha, gamma=cfg["focal_gamma"],
@@ -149,7 +146,6 @@ def finetune_after_prune(model, train_loader, val_loader, device, cfg, epochs, l
         scheduler.step()
 
         # Validate（复用 train_teacher 的 evaluate 函数）
-        class_names = val_loader.dataset.dataset.classes
         f1, acc, per_class_f1 = evaluate(model, val_loader, device, class_names)
         avg_loss = train_loss / len(train_loader)
         print(f"  [{tag}] Epoch {epoch+1}: F1={f1:.4f}, Acc={acc:.2f}%")
@@ -192,7 +188,7 @@ def prune_and_finetune():
     print(f"Distilled student loaded from {cfg['distilled_ckpt']}")
 
     # 2) 数据加载
-    train_loader, val_loader, _ = create_dataloaders()
+    train_loader, val_loader, class_counts, class_names = create_dataloaders()
 
     # 3) 渐进式剪枝
     ratios = np.linspace(0.15, cfg["prune_ratio"], cfg["prune_iterations"])
@@ -206,15 +202,14 @@ def prune_and_finetune():
         pruner.apply_pruning()
 
         student = finetune_after_prune(
-            student, train_loader, val_loader, device, cfg,
+            student, train_loader, val_loader, class_counts, class_names, device, cfg,
             epochs=cfg["prune_finetune_epochs"],
             lr=cfg["prune_finetune_lr"],
             tag=f"iter{i+1}",
         )
 
     # 4) 固化剪枝
-    final_pruner = StructuredPruner(student, prune_ratio=0, method='l2')
-    final_pruner.make_permanent()
+    StructuredPruner.make_permanent(student)
     print("✓ Pruning masks merged into weights (permanent)")
 
     # 5) 最终微调

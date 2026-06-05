@@ -408,7 +408,7 @@ def create_dataloaders(data_root=None, img_size=None, batch_size=None, num_worke
         cloudy_oversample: bool — 是否启用 Cloudy 过采样 2×（DRW 时仅在后期开启）
 
     Returns:
-        tuple: (train_loader, val_loader, class_counts)
+        tuple: (train_loader, val_loader, class_counts, class_names)
     """
     cfg = CONFIG
     root = data_root or prepare_data()
@@ -466,11 +466,12 @@ def create_dataloaders(data_root=None, img_size=None, batch_size=None, num_worke
         persistent_workers=(nw > 0),
     )
 
-    print(f"Classes: {full_dataset.classes}")
-    print(f"Class distribution: {dict(zip(full_dataset.classes, class_counts.astype(int)))}")
+    class_names = full_dataset.classes
+    print(f"Classes: {class_names}")
+    print(f"Class distribution: {dict(zip(class_names, class_counts.astype(int)))}")
     print(f"Train samples: {len(train_ds)}, Val samples: {len(val_ds)}")
 
-    return train_loader, val_loader, class_counts
+    return train_loader, val_loader, class_counts, class_names
 
 
 def compute_class_weights(class_counts):

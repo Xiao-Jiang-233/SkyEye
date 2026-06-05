@@ -117,8 +117,8 @@ class WeatherEfficientNet(nn.Module):
 
         for block in self.backbone.blocks:
             ch = None
-            # timm 1.0.27 中 blocks 是 Sequential，需进入内部找 DepthwiseSeparableConv
-            if hasattr(block, '__iter__') and not hasattr(block, 'conv_pwl'):
+            # timm 1.0.27 中 blocks 可能是 Sequential 容器，需进入内部找 DepthwiseSeparableConv
+            if isinstance(block, nn.Sequential):
                 for inner in block:
                     if hasattr(inner, 'conv_pwl'):
                         ch = inner.conv_pwl.out_channels
