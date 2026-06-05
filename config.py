@@ -23,25 +23,6 @@ if torch.cuda.is_available():
 
 # ---- 自适应硬件检测 ----
 
-def _auto_batch_size():
-    """根据 GPU 显存自适应调整 batch_size，CPU 回退到 8。"""
-    if not torch.cuda.is_available():
-        return 8
-    total_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
-    if total_gb >= 16:
-        return 32
-    elif total_gb >= 12:
-        return 24
-    elif total_gb >= 8:
-        return 16
-    elif total_gb >= 6:
-        return 8
-    elif total_gb >= 4:
-        return 4
-    else:
-        return 2
-
-
 def _auto_num_workers():
     """自适应 DataLoader 线程数。
 
@@ -86,21 +67,22 @@ CONFIG = {
         # ---- sunny 的别名（晴 / 好天气类） ----
         "rainbow": "sunny",       # 彩虹 → 需阳光，雨后晴天现象
     },
-    "num_classes": 9,
+    "num_classes": 6,  # 当前仅训练 6 类（dew/rime/sandstorm 暂缓）
     "class_names": ["cloudy", "dew", "foggy", "rainy", "rime", "sandstorm", "snowy", "sunny", "thundery"],
     # 暂时跳过的类：主数据集（weather_classification）中没有这些类型，训练时忽略
     # 当主数据集扩展后，从此列表中移除即可启用
     "skip_classes": ["dew", "rime", "sandstorm"],
-    "img_size": 224,               # EfficientNet 标准输入
-    "batch_size": _auto_batch_size(),  # 根据 GPU 显存自适应
+    "img_size": 456,               # EfficientNet-B5 原生分辨率
+    "batch_size": 8,              # 手动指定，8GB 显存 + B5@456 的稳妥值
     "val_split": 0.15,             # 验证集比例
 
     # ---- 教师模型 ----
     "teacher_model": "efficientnet_b5",  # timm 模型名
     "teacher_pretrained": True,
     "teacher_epochs": 10,            # 70分钟时限下缩减至10轮
-    "teacher_lr": 1e-3,
+    "teacher_lr": 5e-5,  # 456 原生分辨率下微调，保守 LR 保护预训练特征
     "teacher_weight_decay": 1e-4,
+    "warmup_epochs": 2,             # 学习率 warmup 轮数（LinearLR 0.1→1.0）
 
     # ---- 知识蒸馏 ----
     "student_model": "efficientnet_b0",  # timm 模型名
@@ -127,7 +109,7 @@ CONFIG = {
     "use_focal_loss": True,       # 处理类别不平衡
     "focal_gamma": 1.0,            # 降为 1，让困难样本（cloudy）拿到梯度
     "sam_rho": 0.05,               # SAM 优化器扰动半径（平坦极小值 → 泛化好）
-    "ema_decay": 0.999,            # EMA 权重指数滑动平均衰减
+    "ema_decay": 0.99997,          # EMA 衰减，平滑窗口 ~33k steps ≈ 7 epochs
 
     # ---- 推理 ----
     "inference_device": "cpu",           # 比赛评测用 CPU 推理

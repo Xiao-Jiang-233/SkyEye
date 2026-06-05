@@ -10,8 +10,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch.cuda.amp import GradScaler, autocast
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
+from torch.amp import autocast
 import numpy as np
 from tqdm import tqdm
 from sklearn.metrics import f1_score
@@ -157,7 +157,7 @@ class DistillationTrainer:
             Tensor: 特征 MSE 损失（取各 stage 均值）
         """
         if len(self.proj_layers) == 0:
-            return 0.0  # 无投影层时跳过特征蒸馏
+            return torch.tensor(0.0, device=self.device)  # 无投影层时跳过特征蒸馏
 
         feat_loss = 0.0
         for s_feat, t_feat, proj in zip(student_feats, teacher_feats, self.proj_layers):
@@ -165,9 +165,9 @@ class DistillationTrainer:
             feat_loss += F.mse_loss(projected, t_feat.detach())
         return feat_loss / len(self.proj_layers)
 
-    def train_step(self, images, labels, optimizer, scaler):
+    def train_step(self, images, labels, optimizer):
         """
-        单步蒸馏训练
+        单步蒸馏训练（BF16 autocast，无需 GradScaler）
 
         Returns:
             tuple: (total_loss, kd_loss, feat_loss)
@@ -179,7 +179,7 @@ class DistillationTrainer:
             teacher_logits, teacher_feats = self.teacher(images, return_features=True)
 
         # 获取 Student 输出
-        with autocast(enabled=self.cfg["fp16"]):
+        with autocast('cuda', dtype=torch.bfloat16, enabled=self.cfg["fp16"]):
             student_logits, student_feats = self.student(images, return_features=True)
 
             # 按 feature_info 索引选取特征（跳过通道重复的 block）
@@ -193,11 +193,10 @@ class DistillationTrainer:
             feat_loss = self.feature_loss(student_feat_list, teacher_feat_list)
             total_loss = kd_loss + self.cfg["kd_feature_weight"] * feat_loss
 
-        # 反向传播
+        # 反向传播（BF16 不需要 GradScaler）
         optimizer.zero_grad()
-        scaler.scale(total_loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
+        total_loss.backward()
+        optimizer.step()
 
         return total_loss.item(), kd_loss.item(), feat_loss.item()
 
@@ -215,8 +214,15 @@ class DistillationTrainer:
         # 优化器（student + projection layers）
         student_params = list(self.student.parameters()) + list(self.proj_layers.parameters())
         optimizer = optim.AdamW(student_params, lr=self.cfg["kd_lr"], weight_decay=1e-4)
-        scheduler = CosineAnnealingLR(optimizer, T_max=self.cfg["kd_epochs"])
-        scaler = GradScaler(enabled=self.cfg["fp16"])
+
+        # 调度器：Linear warmup → CosineAnnealing
+        warmup_epochs = self.cfg.get("warmup_epochs", 2)
+        if warmup_epochs > 0:
+            warmup = LinearLR(optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_epochs)
+            cosine = CosineAnnealingLR(optimizer, T_max=self.cfg["kd_epochs"] - warmup_epochs)
+            scheduler = SequentialLR(optimizer, schedulers=[warmup, cosine], milestones=[warmup_epochs])
+        else:
+            scheduler = CosineAnnealingLR(optimizer, T_max=self.cfg["kd_epochs"])
 
         # TensorBoard 日志
         logger = TrainLogger(log_dir="results/tb_results/distill", use_tb=self.cfg["use_tb"])
@@ -230,7 +236,7 @@ class DistillationTrainer:
 
             pbar = tqdm(train_loader, desc=f"KD Epoch {epoch+1}/{self.cfg['kd_epochs']}")
             for images, labels in pbar:
-                total, kd, feat = self.train_step(images, labels, optimizer, scaler)
+                total, kd, feat = self.train_step(images, labels, optimizer)
                 total_loss_avg += total
                 pbar.set_postfix({
                     "total": f"{total:.4f}",

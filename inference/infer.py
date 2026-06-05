@@ -37,7 +37,7 @@ def load_model(model_path=None, device=None):
     return model, device
 
 
-def get_transform(img_size=224):
+def get_transform(img_size=456):
     """获取推理用 transform"""
     return transforms.Compose([
         transforms.Resize(int(img_size * 1.14)),

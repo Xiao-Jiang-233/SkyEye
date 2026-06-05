@@ -12,15 +12,14 @@ import torch
 import torch.nn as nn
 import torch.nn.utils.prune as prune
 import torch.optim as optim
-from torch.cuda.amp import GradScaler, autocast
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
+from torch.amp import autocast
 import numpy as np
 from tqdm import tqdm
-from sklearn.metrics import f1_score
-
 from config import CONFIG
 from models.weather_efficientnet import WeatherEfficientNet
 from data.dataset import create_dataloaders, compute_class_weights
-from training.train_teacher import FocalLoss
+from training.train_teacher import FocalLoss, evaluate
 from utils.logger import TrainLogger
 
 
@@ -112,11 +111,21 @@ def finetune_after_prune(model, train_loader, val_loader, device, cfg, epochs, l
             class_counts[lbl] += 1
 
     alpha = compute_class_weights(class_counts)
-    criterion = FocalLoss(alpha=alpha, gamma=cfg["focal_gamma"])
+    criterion = FocalLoss(
+        alpha=alpha, gamma=cfg["focal_gamma"],
+        label_smoothing=cfg.get("label_smoothing", 0.0),
+    )
 
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-5)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-    scaler = GradScaler(enabled=cfg["fp16"])
+
+    # 调度器：Linear warmup → CosineAnnealing
+    warmup_epochs = cfg.get("warmup_epochs", 2)
+    if warmup_epochs > 0:
+        warmup = LinearLR(optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_epochs)
+        cosine = CosineAnnealingLR(optimizer, T_max=epochs - warmup_epochs)
+        scheduler = SequentialLR(optimizer, schedulers=[warmup, cosine], milestones=[warmup_epochs])
+    else:
+        scheduler = CosineAnnealingLR(optimizer, T_max=epochs)
 
     # TensorBoard 日志（每轮微调独立目录）
     log_dir = f"results/tb_results/prune_{tag}" if tag else "results/tb_results/prune"
@@ -131,34 +140,19 @@ def finetune_after_prune(model, train_loader, val_loader, device, cfg, epochs, l
         for images, labels in tqdm(train_loader, desc=f"{tag} FT Epoch {epoch+1}/{epochs}"):
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
-            with autocast(enabled=cfg["fp16"]):
+            with autocast('cuda', dtype=torch.bfloat16, enabled=cfg["fp16"]):
                 loss = criterion(model(images), labels)
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            loss.backward()
+            optimizer.step()
             train_loss += loss.item()
 
         scheduler.step()
 
-        # Validate
-        model.eval()
-        all_preds, all_labels = [], []
-        for images, labels in val_loader:
-            images = images.to(device)
-            logits = model(images)
-            preds = logits.argmax(dim=1).cpu().numpy()
-            all_preds.extend(preds)
-            all_labels.extend(labels.numpy())
-
-        f1 = f1_score(all_labels, all_preds, average='macro')
-        per_class_f1 = f1_score(all_labels, all_preds, average=None)
-        acc = (np.array(all_preds) == np.array(all_labels)).mean() * 100
+        # Validate（复用 train_teacher 的 evaluate 函数）
+        class_names = val_loader.dataset.dataset.classes
+        f1, acc, per_class_f1 = evaluate(model, val_loader, device, class_names)
         avg_loss = train_loss / len(train_loader)
         print(f"  [{tag}] Epoch {epoch+1}: F1={f1:.4f}, Acc={acc:.2f}%")
-
-        # 获取类名（从 loader 底层 ImageFolder）
-        class_names = val_loader.dataset.dataset.classes
-        per_class_f1 = dict(zip(class_names, per_class_f1))
 
         # TensorBoard 记录（F1 为主监控，含 per-class）
         logger.log_metrics("train", {"loss": avg_loss}, epoch + 1)

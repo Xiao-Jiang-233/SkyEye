@@ -14,7 +14,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from torch.amp import autocast
 import numpy as np
 from sklearn.metrics import f1_score
@@ -28,25 +28,35 @@ from utils.logger import TrainLogger
 
 class FocalLoss(nn.Module):
     """
-    Focal Loss for 类别不平衡
+    Focal Loss for 类别不平衡 + label smoothing
 
-    FL = -(1 - pt)^γ × log(pt)
+    FL = -(1 - pt)^γ × CE_smoothed
+
+    其中 CE_smoothed 由 F.cross_entropy(label_smoothing=ε) 提供，
+    pt 仍从模型对真实类的 softmax 概率计算，保持 focal 调制语义。
 
     Args:
         alpha: Tensor — 各类别权重
         gamma: float — 聚焦参数（默认 1.0）
+        label_smoothing: float — 标签平滑 ε（默认 0.0 即关闭）
         reduction: str — 'mean' / 'sum'
     """
 
-    def __init__(self, alpha=None, gamma=1.0, reduction='mean'):
+    def __init__(self, alpha=None, gamma=1.0, label_smoothing=0.0, reduction='mean'):
         super().__init__()
         self.alpha = alpha
         self.gamma = gamma
+        self.label_smoothing = label_smoothing
         self.reduction = reduction
 
     def forward(self, inputs, targets):
-        ce_loss = nn.functional.cross_entropy(inputs, targets, reduction='none')
-        pt = torch.exp(-ce_loss)
+        # label_smoothing 直接交给 cross_entropy 处理
+        ce_loss = nn.functional.cross_entropy(
+            inputs, targets, reduction='none', label_smoothing=self.label_smoothing,
+        )
+        # pt: 模型对真实类的预测概率（保持 focal 调制语义）
+        probs = torch.softmax(inputs, dim=1)
+        pt = probs.gather(1, targets.unsqueeze(1)).squeeze(1).clamp(min=1e-7)
         focal_loss = (1 - pt) ** self.gamma * ce_loss
 
         if self.alpha is not None:
@@ -131,7 +141,7 @@ class EMA:
 
     Args:
         model: nn.Module
-        decay: float — 衰减率（默认 0.999）
+        decay: float — 衰减率（默认 0.99997，平滑窗口 ~33k steps ≈ 7 epochs）
 
     Usage:
         ema = EMA(model, decay=0.999)
@@ -223,7 +233,10 @@ def train_teacher():
     #    ② cloudy 过采样 2× 已由 dataset.py 完成，此处仅使用逆频率权重
     #       （过采样 + loss 额外加权叠加会造成训练不稳定）
     alpha = compute_class_weights(class_counts)
-    criterion = FocalLoss(alpha=alpha, gamma=cfg["focal_gamma"])
+    criterion = FocalLoss(
+        alpha=alpha, gamma=cfg["focal_gamma"],
+        label_smoothing=cfg.get("label_smoothing", 0.0),
+    )
 
     # 4) 优化器 + SAM 包装 + 调度器
     base_optimizer = optim.AdamW(
@@ -232,7 +245,14 @@ def train_teacher():
         weight_decay=cfg["teacher_weight_decay"],
     )
     sam = SAM(base_optimizer, rho=cfg.get("sam_rho", 0.05))  # ④ SAM
-    scheduler = CosineAnnealingLR(base_optimizer, T_max=cfg["teacher_epochs"])
+    # 调度器：Linear warmup → CosineAnnealing
+    warmup_epochs = cfg.get("warmup_epochs", 2)
+    if warmup_epochs > 0:
+        warmup = LinearLR(base_optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_epochs)
+        cosine = CosineAnnealingLR(base_optimizer, T_max=cfg["teacher_epochs"] - warmup_epochs)
+        scheduler = SequentialLR(base_optimizer, schedulers=[warmup, cosine], milestones=[warmup_epochs])
+    else:
+        scheduler = CosineAnnealingLR(base_optimizer, T_max=cfg["teacher_epochs"])
 
     # ⑤ EMA 权重平滑
     ema = EMA(teacher, decay=cfg.get("ema_decay", 0.999))
@@ -245,36 +265,51 @@ def train_teacher():
     # BF16: 与 FP32 相同动态范围，无需 GradScaler，RTX 5070+ 原生支持
     use_amp = cfg["fp16"] and torch.cuda.is_available()
 
+    sam_start_epoch = cfg["teacher_epochs"] // 2  # 前一半 epoch 不启用 SAM
+
     for epoch in range(cfg["teacher_epochs"]):
+        use_sam = epoch >= sam_start_epoch
+        mode_tag = "SAM" if use_sam else "Fast"
+
         # --- Train ---
         teacher.train()
         train_loss = 0.0
-        pbar = tqdm(train_loader, desc=f"Teacher Epoch {epoch+1}/{cfg['teacher_epochs']}")
+        pbar = tqdm(train_loader, desc=f"Teacher Epoch {epoch+1}/{cfg['teacher_epochs']} [{mode_tag}]")
         for images, labels in pbar:
             images, labels = images.to(device), labels.to(device)
 
-            # ---- SAM first pass: standard forward-backward ----
-            sam.zero_grad()
-            with autocast('cuda', dtype=torch.bfloat16, enabled=use_amp):
-                logits = teacher(images)
-                loss = criterion(logits, labels)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
-            sam.first_step()            # ④ 梯度方向扰动
-            base_optimizer.zero_grad()
+            if use_sam:
+                # ---- SAM first pass: standard forward-backward ----
+                sam.zero_grad()
+                with autocast('cuda', dtype=torch.bfloat16, enabled=use_amp):
+                    logits = teacher(images)
+                    loss = criterion(logits, labels)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
+                sam.first_step()
+                base_optimizer.zero_grad()
 
-            # ---- SAM second pass: perturbed forward-backward ----
-            with autocast('cuda', dtype=torch.bfloat16, enabled=use_amp):
-                logits_perturbed = teacher(images)
-                loss_perturbed = criterion(logits_perturbed, labels)
-            loss_perturbed.backward()
-            torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
-            sam.second_step()           # ④ 撤销扰动 + optimizer.step()
+                # ---- SAM second pass: perturbed forward-backward ----
+                with autocast('cuda', dtype=torch.bfloat16, enabled=use_amp):
+                    logits_perturbed = teacher(images)
+                    loss_perturbed = criterion(logits_perturbed, labels)
+                loss_perturbed.backward()
+                torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
+                sam.second_step()
+            else:
+                # ---- Fast mode: 单次 forward-backward ----
+                base_optimizer.zero_grad()
+                with autocast('cuda', dtype=torch.bfloat16, enabled=use_amp):
+                    logits = teacher(images)
+                    loss = criterion(logits, labels)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
+                base_optimizer.step()
 
             # ⑤ EMA 更新（每步）
             ema.update(teacher)
 
-            train_loss += loss.item()  # 记录原始位置 loss（更准确）
+            train_loss += loss.item()
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
         scheduler.step()
