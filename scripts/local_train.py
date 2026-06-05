@@ -11,7 +11,7 @@
     python scripts/local_train.py export      # 仅 ONNX 导出 + 量化 + 测速
     python scripts/local_train.py check       # 仅检查环境
 
-对应 Notebook 中的 Cell 2-7.
+对应 main.ipynb 中的 Cell 2-6.
 """
 import sys
 import time
@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 def stage_check():
-    """Cell 2: 检查环境和配置"""
+    """Stage:2: 检查环境和配置"""
     print("=" * 50)
     print("Stage 1/6: 环境检查")
     print("=" * 50)
@@ -44,7 +44,7 @@ def stage_check():
 
 
 def stage_data():
-    """Cell 3: 数据准备"""
+    """Stage:3: 数据准备"""
     print("=" * 50)
     print("Stage 2/6: 数据准备")
     print("=" * 50)
@@ -60,7 +60,7 @@ def stage_data():
 
 
 def stage_teacher():
-    """Cell 4: 训练教师模型"""
+    """Stage:4: 训练教师模型"""
     print("=" * 50)
     print("Stage 3/6: 训练教师模型 (EfficientNet-B5)")
     print("=" * 50)
@@ -74,7 +74,7 @@ def stage_teacher():
 
 
 def stage_distill():
-    """Cell 5: 知识蒸馏"""
+    """Stage:5: 知识蒸馏"""
     print("=" * 50)
     print("Stage 4/6: 知识蒸馏 (B5 → B0)")
     print("=" * 50)
@@ -88,7 +88,7 @@ def stage_distill():
 
 
 def stage_prune():
-    """Cell 6: 结构化剪枝 + 微调"""
+    """Stage:6: 结构化剪枝 + 微调"""
     print("=" * 50)
     print("Stage 5/6: 结构化剪枝 + 微调")
     print("=" * 50)
@@ -102,7 +102,7 @@ def stage_prune():
 
 
 def stage_export():
-    """Cell 7: ONNX 导出 + INT8 量化 + CPU 测速"""
+    """Stage:7: ONNX 导出 + INT8 量化 + CPU 测速"""
     print("=" * 50)
     print("Stage 6/6: ONNX 导出 + INT8 量化 + CPU 测速")
     print("=" * 50)

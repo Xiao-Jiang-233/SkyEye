@@ -168,11 +168,6 @@ def finetune_after_prune(model, train_loader, val_loader, device, cfg, epochs, l
         logger.log_metrics("val", val_metrics, epoch + 1)
         logger.flush()  # 每轮强制写入磁盘
 
-        # Mo 平台 JSON 指标（Job 训练时自动可视化）
-        print('{"metric": "prune_%s_loss", "value": %.4f, "epoch": %d}' % (tag, avg_loss, epoch + 1))
-        print('{"metric": "prune_%s_f1", "value": %.4f, "epoch": %d}' % (tag, f1, epoch + 1))
-        print('{"metric": "prune_%s_acc", "value": %.2f, "epoch": %d}' % (tag, acc, epoch + 1))
-
         if f1 > best_f1:
             best_f1 = f1
             torch.save(model.state_dict(), ckpt_path)
