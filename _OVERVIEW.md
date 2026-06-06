@@ -1,22 +1,20 @@
 # SkyEye — 天气图片分类
 
-基于 **EfficientNet-B4 → 知识蒸馏 → B0 → 结构化剪枝 → ONNX → INT8 量化** 的九类天气分类管线。
+基于 **EfficientNet-B4 → 知识蒸馏 → B0 → 结构化剪枝 → ONNX → INT8 量化** 的天气分类管线。
 
 ## 功能
 
-对输入天气图片进行九分类预测：
+对输入天气图片进行分类预测（当前 6 类 + 1 兜底类）：
 
-| 类名 | 中文 |
-|------|------|
-| `cloudy` | 多云 |
-| `dew` | 露水 |
-| `foggy` | 雾霾 |
-| `rainy` | 雨天 |
-| `rime` | 雾凇 |
-| `sandstorm` | 沙尘暴 |
-| `snowy` | 雪天 |
-| `sunny` | 晴天 |
-| `thundery` | 雷暴 |
+| 类名       | 中文                       | 训练状态   |
+| ---------- | -------------------------- | ---------- |
+| `cloudy`   | 多云                       | ✓          |
+| `foggy`    | 雾霾                       | ✓          |
+| `rainy`    | 雨天                       | ✓          |
+| `snowy`    | 雪天                       | ✓          |
+| `sunny`    | 晴天                       | ✓          |
+| `thundery` | 雷暴                       | ✓          |
+| `other`    | 其他（dew/rime/sandstorm） | ⏭ 暂不训练 |
 
 ## 技术方案
 
@@ -35,15 +33,15 @@ CPU Inference (ONNX Runtime)
 
 ## 运行环境
 
-| 组件 | 版本 |
-| --- | --- |
-| **Python** | 3.13.13 |
-| **PyTorch** | 2.12.0 |
-| **torchvision** | 0.27.0 |
-| **timm** | 1.0.27 |
-| **onnx** | 1.21.0 |
-| **onnxruntime** | 1.26.0 |
-| **平台** | Windows 11 + RTX 5070 (Blackwell, CUDA 13.0) |
+| 组件            | 版本                                                              |
+| --------------- | ----------------------------------------------------------------- |
+| **Python**      | 3.13.13                                                           |
+| **PyTorch**     | 2.12.0                                                            |
+| **torchvision** | 0.27.0                                                            |
+| **timm**        | 1.0.27                                                            |
+| **onnx**        | 1.21.0                                                            |
+| **onnxruntime** | 1.26.0                                                            |
+| **平台**        | Windows 11 + AMD Ryzen 9 9955HX + RTX 5070 (Blackwell, CUDA 13.0) |
 
 > 预训练模型下载已配置 HF 镜像 (`hf-mirror.com`)，国内可正常访问。
 
@@ -76,7 +74,7 @@ SkyEye/
 
 ## 数据集
 
-主数据集 6 类 × 各 10,000 张 = **60,000** 张 + 补充数据集 6,862 张，共 **66,862** 张，9 个目标类。
+主数据集 6 类 × 各 10,000 张 = **60,000** 张 + 补充数据集 6,862 张，共 **66,862** 张。dew/rime/sandstorm 通过 `class_aliases` 映射到 `other` 兜底类（当前不训练）。
 
 数据源合并到 `_data/weather/`（不入 git），支持多源自动合并 + 类名映射。
 
@@ -84,13 +82,13 @@ SkyEye/
 
 ## 训练流程（70 分钟 GPU 时限）
 
-| 阶段 | 内容 | 预估耗时 |
-|------|------|----------|
-| 1. Train Teacher | EfficientNet-B4, 15 epochs, FocalLoss | ~30 min |
-| 2. Knowledge Distillation | B4 → B0, 15 epochs, T=4, α=0.7 | ~15 min |
-| 3. Structured Pruning | 渐进 2 轮 (20%→40%) + Fine-tune 5 epoch × 2 | ~5 min |
-| 4. ONNX Export + INT8 | FP32 → ONNX → INT8 动态量化 | ~3 min |
-| 5. CPU Inference | ONNX Runtime CPUExecutionProvider | <100ms/img |
+| 阶段                      | 内容                                        | 预估耗时   |
+| ------------------------- | ------------------------------------------- | ---------- |
+| 1. Train Teacher          | EfficientNet-B4, 15 epochs, FocalLoss       | ~30 min    |
+| 2. Knowledge Distillation | B4 → B0, 15 epochs, T=4, α=0.7              | ~15 min    |
+| 3. Structured Pruning     | 渐进 2 轮 (20%→40%) + Fine-tune 5 epoch × 2 | ~5 min     |
+| 4. ONNX Export + INT8     | FP32 → ONNX → INT8 动态量化                 | ~3 min     |
+| 5. CPU Inference          | ONNX Runtime CPUExecutionProvider           | <100ms/img |
 
 ### 训练监控（TensorBoard）
 
@@ -101,7 +99,7 @@ tensorboard --logdir results/tb_results/
 # 浏览器打开 http://localhost:6006
 ```
 
-SCALARS 页可对比各阶段的 loss / F1 / Accuracy 曲线。
+SCALARS 页可对比各阶段的 loss / F1 / Accuracy / per-class F1 曲线。
 
 ## 依赖安装
 
@@ -114,8 +112,7 @@ Jupyter Notebook 中按顺序执行各 Cell，或使用 CLI：`python scripts/lo
 ## 相关文档
 
 | 文档 | 说明 |
-|------|------|
-| [CLAUDE.md](CLAUDE.md) | 项目开发指南 |
+| ---- | ---- |
+| [CLAUDE.md](CLAUDE.md) | 项目开发指南（配置、数据集、训练策略） |
 | [docs/接口文档.md](docs/接口文档.md) | 模块 API 接口文档 |
-
-| [设计文档](docs/superpowers/specs/) | 技术方案设计 |
+| [docs/superpowers/specs/](docs/superpowers/specs/) | 技术方案设计 |

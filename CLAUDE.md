@@ -4,14 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-项目名：**SkyEye**，九类天气图片分类任务（cloudy, dew, foggy, rainy, rime, sandstorm, snowy, sunny, thundery），当前训练启用 6 类（dew/rime/sandstorm 通过 skip_classes 暂缓）。
+项目名：**SkyEye**，天气图片分类任务。`class_names` 共 7 类（6 核心天气类 + `other` 兜底类），当前训练 6 类（`skip_classes: ["other"]`）。
+dew/rime/sandstorm 通过 `class_aliases` 映射到 `other`，暂不参与训练（补充数据集仅 ~700~1200 张，样本量不足）。
 技术方案：EfficientNet-B4（教师）→ 知识蒸馏 → EfficientNet-B0（学生）→ 结构化剪枝 → ONNX 导出 → INT8 量化。
 比赛约束：GPU 训练 → CPU 推理，总时限 70 分钟。
+当前教师最优：**Macro F1 0.8933 / Acc 89.16%**（全量 60k 评估），瓶颈在 cloudy↔sunny 混淆。
 设计文档：`docs/superpowers/specs/2026-06-03-efficientnet-kd-pruning-design.md`
 
 ## 开发环境
 
 - **操作系统**: Windows 11
+- **CPU**: AMD Ryzen 9 9955HX（16 核 32 线程）
 - **GPU**: RTX 5070（Blackwell，CUDA 13.0 / cu130）
 - **运行时环境**: Python 3.13.x | PyTorch 2.12.0+cu130 | CUDA
 - **虚拟环境**: `.venv/`（已在 `.gitignore` 中排除）
@@ -22,6 +25,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - `pin_memory` 自动检测 CUDA 可用性
   - 混合精度（BF16）仅在 CUDA 上生效，CPU 上自动跳过
   - 数据集路径通过 `config.py` 中的 `data_roots: "auto"` 自动发现
+  - OpenMP/MKL 线程数按 CPU 核数自适应（32 核 → 8 线程/worker）
 
 ## 目录结构
 
@@ -35,6 +39,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `scripts/run.ps1`        | Windows PowerShell 快捷启动脚本                                                |
 | `datasets/`              | 导入的数据集，**只读**，通过 `prepare_data()` 复制到可写目录                   |
 | `results/`               | 训练结果和模型检查点存放处                                                     |
+| `results/checkpoints/`   | 每 epoch 周期备份（保留最近 20 个，自动滚动清理）                               |
 | `results/tb_results/`    | TensorBoard 日志存放处                                                         |
 | `_OVERVIEW.md`           | 项目介绍，**从 README.md 自动同步**，请勿手动编辑，修改 README.md 后 pull 即可 |
 | `docs/接口文档.md`       | 模块 API 接口文档                                                              |
@@ -60,20 +65,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 数据集 2：weather-dataset.zip（补充数据集）
 
-`datasets/jehanbhathena/weather-dataset.zip` — 6,862 张，11 个细分类别，通过 `class_aliases` 映射到 9 个目标类（其中 3 类暂缓）：
+`datasets/jehanbhathena/weather-dataset.zip` — 6,862 张，11 个细分类别，通过 `class_aliases` 映射到 7 个目标类：
 
-| 原始类             | 映射到    | 数量  | 状态   |
-| ------------------ | --------- | ----- | ------ |
-| dew                | dew       | 698   | ⏭ skip |
-| fogsmog            | foggy     | 851   | ✓      |
-| rime               | rime      | 1,160 | ⏭ skip |
-| sandstorm          | sandstorm | 692   | ⏭ skip |
-| frost, glaze, snow | snowy     | 1,735 | ✓      |
-| hail, lightning    | thundery  | 968   | ✓      |
-| rain               | rainy     | 526   | ✓      |
-| rainbow            | sunny     | 232   | ✓      |
+| 原始类             | 映射到    | 数量  |
+| ------------------ | --------- | ----- |
+| dew                | other     | 698   |
+| fogsmog            | foggy     | 851   |
+| rime               | other     | 1,160 |
+| sandstorm          | other     | 692   |
+| frost, glaze, snow | snowy     | 1,735 |
+| hail, lightning    | thundery  | 968   |
+| rain               | rainy     | 526   |
+| rainbow            | sunny     | 232   |
 
-> dew/rime/sandstorm 通过 `skip_classes` 暂缓加载（主数据集无对应类）。移除 `skip_classes` 中条目即可启用。
+> dew/rime/sandstorm 通过 `class_aliases` 映射到 `other`，该类别在 `skip_classes` 中暂不训练。
+> 如需启用，将 `"other"` 从 `skip_classes` 移除，`num_classes` 会自动更新。
 
 ### 多数据集合并
 
@@ -87,6 +93,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     "haze": "foggy", "fog": "foggy",
     "snow": "snowy", "rain": "rainy",
     "thunder": "thundery", "thunderstorm": "thundery", "lightning": "thundery",
+    "dew": "other", "rime": "other", "sandstorm": "other",
 },
 ```
 
@@ -143,6 +150,25 @@ python scripts/eval_full.py
 tensorboard --logdir results/tb_results/
 ```
 
+## 训练策略
+
+### 教师模型优化组合
+
+| 策略 | 参数 | 说明 |
+|---|---|---|
+| DRW 延迟过采样 | 前 60% epoch 标准 → 后 40% cloudy 2× | LDAM (NeurIPS 2019)，先学特征再校准边界 |
+| FocalLoss | γ=1.0 | 处理类别不平衡，让困难样本拿到梯度 |
+| MixUp | α=0.2（Fast 阶段） | Zhang et al. (ICLR 2018)，输入空间正则化 |
+| SAM | rho=0.05（后 5 epoch） | 平坦极小值探素，**SAM 阶段自动关闭 MixUp** 避免正则化叠加 |
+| EMA | decay=0.99997 | 权重指数滑动平均，平滑窗口 ~33k steps |
+| BF16 AMP | autocast + clip_grad | RTX 5070 原生支持，无需 GradScaler |
+
+### 已知经验
+
+- **SAM + MixUp 叠加会导致过度正则化**：epoch 11-15 SAM+MU 时 Val F1 低于 epoch 10 Fast+MU（0.8615 vs 0.8636），改为 SAM 阶段关闭 MixUp 后缓解
+- **cloudy↔sunny 是最大混淆对**：混淆矩阵中 sunny→cloudy 1510 张（17.4%），cloudy 的 Precision 仅 0.71
+- **thundery/snowy 几乎完美**：F1 > 0.95，特征鲜明
+
 ## 注意事项
 
 - **`_OVERVIEW.md` 是 `README.md` 的镜像文件，修改项目概述时只改 `README.md`，完成后 `cp README.md _OVERVIEW.md` 同步即可**
@@ -151,9 +177,12 @@ tensorboard --logdir results/tb_results/
 - 预训练模型下载已配置 HF 镜像：`config.py` 中 `HF_ENDPOINT=https://hf-mirror.com`
 - 训练结果务必指定输出到 `results/` 目录
 - `.venv/` 是本地虚拟环境目录（已在 `.gitignore` 中排除）
+- `_data/` 是数据集合并可写目录（已在 `.gitignore` 中排除）
 - **Windows**：`num_workers` 自动适配（`config.py` 检测 `sys.platform`），`pin_memory` 自动适配
 - **Windows**：`fp16`/BF16 混合精度仅在 CUDA 上生效，CPU 训练自动跳过
+- **Windows**：全量评估时设置 `num_workers=0`，避免 60k 图 DataLoader 共享内存耗尽
 - BF16 autocast 用于训练（RTX 5070 原生支持，无需 GradScaler）
+- TensorBoard 仅使用 SCALARS 标签页（loss/F1/Acc/per-class F1），无 GRAPHS/PROFILE/HISTOGRAMS
 
 ## 核心依赖
 
