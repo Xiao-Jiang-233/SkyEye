@@ -336,6 +336,8 @@ def train_teacher():
     for epoch in range(cfg["teacher_epochs"]):
         use_sam = epoch >= sam_start_epoch
         use_os = epoch >= drw_start_epoch  # DRW 延迟过采样
+        # SAM 阶段关闭 MixUp，避免正则化叠加导致扰动噪声放大
+        epoch_mixup_alpha = 0.0 if use_sam else mixup_alpha
         mode_parts = []
         if use_sam:
             mode_parts.append("SAM")
@@ -343,7 +345,7 @@ def train_teacher():
             mode_parts.append("Fast")
         if use_os:
             mode_parts.append("OS")
-        if mixup_alpha > 0:
+        if epoch_mixup_alpha > 0:
             mode_parts.append("MU")
         mode_tag = "+".join(mode_parts)
 
@@ -362,7 +364,7 @@ def train_teacher():
             images, labels = images.to(device), labels.to(device)
 
             # ⑥ MixUp: 生成虚拟混合样本 (Zhang et al., ICLR 2018)
-            mixed_images, labels_a, labels_b, lam = mixup_data(images, labels, mixup_alpha)
+            mixed_images, labels_a, labels_b, lam = mixup_data(images, labels, epoch_mixup_alpha)
 
             if use_sam:
                 # ---- SAM first pass: MixUp forward-backward ----
