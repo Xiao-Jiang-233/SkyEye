@@ -350,14 +350,15 @@ def prepare_data():
     Returns:
         str: 合并后可写数据目录路径
     """
-    entries = _get_data_roots()
     dst = CONFIG["writable_root"]
+
+    # 已存在则跳过，不发重复日志
+    if os.path.exists(dst):
+        return dst
+
+    entries = _get_data_roots()
     target_classes = CONFIG.get("class_names", [])
     skip_classes = CONFIG.get("skip_classes", [])
-
-    if os.path.exists(dst):
-        print(f"Dataset already exists at {dst}")
-        return dst
 
     os.makedirs(dst, exist_ok=True)
     total_files = 0
@@ -467,8 +468,9 @@ def create_dataloaders(data_root=None, img_size=None, batch_size=None, num_worke
     )
 
     class_names = full_dataset.classes
-    print(f"Classes: {class_names}")
-    print(f"Class distribution: {dict(zip(class_names, class_counts.astype(int)))}")
+    if not cloudy_oversample:
+        print(f"Classes: {class_names}")
+        print(f"Class distribution: {dict(zip(class_names, class_counts.astype(int)))}")
     print(f"Train samples: {len(train_ds)}, Val samples: {len(val_ds)}")
 
     return train_loader, val_loader, class_counts, class_names

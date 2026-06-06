@@ -269,12 +269,6 @@ def train_teacher():
         pretrained=cfg["teacher_pretrained"],
     ).to(device)
 
-    # 记录模型图到 TensorBoard（GRAPHS 标签）
-    if cfg["use_tb"]:
-        sample_images, _ = next(iter(train_loader_std))
-        logger.writer.add_graph(teacher, sample_images.to(device))
-        print(f"Model graph logged to TensorBoard GRAPHS tab")
-
     # 3) 损失函数（FocalLoss + 类别权重 — 始终用原始分布计算 alpha）
     #    DRW 只改变采样分布，不改 loss 权重，避免叠加导致过矫正
     alpha = compute_class_weights(class_counts)
@@ -304,19 +298,6 @@ def train_teacher():
 
     # TensorBoard 日志
     logger = TrainLogger(log_dir="results/tb_results/teacher", use_tb=cfg["use_tb"])
-
-    # PyTorch Profiler（仅首 epoch 采集若干步，trace 写入同目录供 TensorBoard PROFILE 标签读取）
-    prof = None
-    if cfg.get("profile", False):
-        prof = torch.profiler.profile(
-            schedule=torch.profiler.schedule(
-                wait=1, warmup=1, active=cfg.get("profile_steps", 5),
-            ),
-            on_trace_ready=torch.profiler.tensorboard_trace_handler(logger.log_dir, worker_name="teacher"),
-            record_shapes=True,
-            profile_memory=True,
-            with_stack=True,
-        )
 
     # 5) 训练循环
     best_f1 = 0.0
@@ -354,9 +335,6 @@ def train_teacher():
 
         # --- Train ---
         teacher.train()
-        # Profiler：仅首 epoch 采集（wait=1, warmup=1, active=N）
-        if epoch == 0 and prof:
-            prof.start()
         train_loss = 0.0
         train_preds, train_labels_list = [], []  # 收集训练集预测用于过拟合监控
         pbar = tqdm(train_loader, desc=f"Teacher Epoch {epoch+1}/{cfg['teacher_epochs']} [{mode_tag}]")
@@ -404,14 +382,8 @@ def train_teacher():
             # ⑤ EMA 更新（每步）
             ema.update(teacher)
 
-            if prof:
-                prof.step()
-
             train_loss += loss.item()
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
-
-        if epoch == 0 and prof:
-            prof.stop()
 
         scheduler.step()
 

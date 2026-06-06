@@ -97,8 +97,6 @@ CONFIG = {
     "seed": 42,
     "fp16": True,                 # 混合精度训练（仅 CUDA 生效）
     "use_tb": True,              # TensorBoard 日志（需 pip install tensorboard）
-    "profile": True,                  # 启用 PyTorch Profiler（慢，日常训练可关）
-    "profile_steps": 5,               # Profiler 采集步数（wait=1 + warmup=1 + active=N）
     "num_workers": _auto_num_workers(),  # 自适应：Win→2, Linux→min(4, cpu//2)
     "scheduler": "cosine",        # cosine / plateau
     "label_smoothing": 0.0,  # 关闭：FocalLoss 自带 max-entropy 正则化 (NeurIPS 2020)
