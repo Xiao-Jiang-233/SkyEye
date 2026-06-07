@@ -215,7 +215,7 @@ def prune_and_finetune():
     # 5) 最终微调
     print("\nFinal fine-tuning...")
     student = finetune_after_prune(
-        student, train_loader, val_loader, device, cfg,
+        student, train_loader, val_loader, class_counts, class_names, device, cfg,
         epochs=cfg["prune_finetune_epochs"],
         lr=cfg["prune_finetune_lr"] * 0.5,
         tag="final",
