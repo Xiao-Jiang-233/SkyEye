@@ -74,7 +74,7 @@ SkyEye/
 
 ## 数据集
 
-主数据集 6 类 × 各 10,000 张 = **60,000** 张。
+主数据集 6 类 × 各 10,000 张 = **60,000** 张 + 补充数据集 6,862 张，共 **66,862** 张。dew/rime/sandstorm 通过 `class_aliases` 映射到 `other` 兜底类（当前不训练）。
 
 数据源合并到 `_data/weather/`（不入 git），支持多源自动合并 + 类名映射。
 
@@ -111,8 +111,8 @@ Jupyter Notebook 中按顺序执行各 Cell，或使用 CLI：`python scripts/lo
 
 ## 相关文档
 
-| 文档                                               | 说明                                   |
-| -------------------------------------------------- | -------------------------------------- |
-| [CLAUDE.md](CLAUDE.md)                             | 项目开发指南（配置、数据集、训练策略） |
-| [docs/接口文档.md](docs/接口文档.md)               | 模块 API 接口文档                      |
-| [docs/superpowers/specs/](docs/superpowers/specs/) | 技术方案设计                           |
+| 文档 | 说明 |
+| ---- | ---- |
+| [CLAUDE.md](CLAUDE.md) | 项目开发指南（配置、数据集、训练策略） |
+| [docs/接口文档.md](docs/接口文档.md) | 模块 API 接口文档 |
+| [docs/superpowers/specs/](docs/superpowers/specs/) | 技术方案设计 |
