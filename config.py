@@ -73,10 +73,15 @@ CONFIG = {
     # ---- 教师模型 ----
     "teacher_model": "efficientnet_b4",  # timm 模型名
     "teacher_pretrained": True,
-    "teacher_epochs": 15,            # 15轮给SAM后5轮充分收敛
+    "teacher_epochs": 20,            # 全流程总轮数
+    "teacher_phase1_epochs": 12,    # Phase 1: Fast+MU（标准采样）
+    "teacher_phase2_epochs": 3,     # Phase 2: Fast+OS+MU（DRW 过采样）
+    "teacher_phase3_epochs": 5,     # Phase 3: SAM+OS+MU(lite)（轻量 MixUp 收尾）
     "teacher_lr": 5e-5,  # 380 原生分辨率下微调，保守 LR 保护预训练特征
     "teacher_weight_decay": 1e-4,
     "warmup_epochs": 2,             # 学习率 warmup 轮数（LinearLR 0.1→1.0）
+    "sam_epochs": 5,                # SAM 最后 5 轮收尾
+    "sam_mixup_alpha": 0.05,        # SAM 阶段轻量 MixUp（避免过正则化，保留输入多样性）
 
     # ---- 知识蒸馏 ----
     "student_model": "efficientnet_b0",  # timm 模型名
@@ -112,7 +117,8 @@ CONFIG = {
     "use_int8_quantization": True,       # CPU 推理时启用 INT8 量化加速
 
     # ---- 路径 ----
-    "teacher_ckpt": "results/teacher_best.pth",
+    "teacher_ckpt_dir": "results/checkpoints/teacher",
+    "teacher_ckpt": "results/checkpoints/teacher/teacher_best.pth",
     "distilled_ckpt": "results/student_distilled_best.pth",
     "pruned_ckpt": "results/student_pruned_final.pth",
     "onnx_path": "results/weather_model.onnx",

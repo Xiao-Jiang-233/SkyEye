@@ -245,198 +245,468 @@ def evaluate(model, loader, device, class_names=None):
 
 
 # ============================================================
-# Train Teacher
+# Phase helpers
 # ============================================================
-def train_teacher():
-    """训练教师模型主函数"""
-    cfg = CONFIG
-    device = torch.device(cfg["device"])
-    print(f"Using device: {device}")
+def _get_phase_paths(cfg):
+    """返回 (ckpt_dir, phase1_best, phase2_best, phase3_best)"""
+    ckpt_dir = cfg["teacher_ckpt_dir"]
+    os.makedirs(ckpt_dir, exist_ok=True)
+    p1 = os.path.join(ckpt_dir, "fast_mu_best.pth")
+    p2 = os.path.join(ckpt_dir, "fast_os_mu_best.pth")
+    p3 = os.path.join(ckpt_dir, "sam_best.pth")
+    return ckpt_dir, p1, p2, p3
 
-    # 1) 数据加载（DRW: 两个训练集，前 60% epoch 不用过采样，后 40% 开启）
-    #    DRW = Deferred Re-weighting/Re-sampling（LDAM, NeurIPS 2019）
-    #    过采样从 epoch 0 开始会导致 cloudy 过度自信（高召回低精确），
-    #    延迟到后期再开启，让模型先学好特征表示，再校准决策边界
-    train_loader_std, val_loader, class_counts, class_names = create_dataloaders(cloudy_oversample=False)
-    train_loader_os, _, _, _ = create_dataloaders(cloudy_oversample=True)
 
-    drw_start_epoch = int(cfg["teacher_epochs"] * 0.6)  # 后 40% epoch 开启过采样
+def _save_epoch_ckpt(model, ema, ckpt_dir, global_epoch):
+    """保存 per-epoch EMA checkpoint（自动清理 20 轮前的旧文件）"""
+    path = os.path.join(ckpt_dir, f"teacher_epoch_{global_epoch:02d}.pth")
+    ema.apply_shadow(model)
+    torch.save(model.state_dict(), path)
+    ema.restore(model)
+    old = os.path.join(ckpt_dir, f"teacher_epoch_{global_epoch-20:02d}.pth")
+    if os.path.exists(old):
+        os.remove(old)
 
-    # 2) 创建模型
+
+def _save_best(model, ema, path, best_f1):
+    """保存最佳 EMA checkpoint"""
+    ema.apply_shadow(model)
+    torch.save(model.state_dict(), path)
+    ema.restore(model)
+    print(f"  ✓ Best saved! F1={best_f1:.4f} → {os.path.basename(path)}")
+
+
+def _create_model(cfg, device, checkpoint_path=None):
+    """创建模型：从 checkpoint 加载 或 pretrained 初始化"""
     teacher = WeatherEfficientNet(
         model_name=cfg["teacher_model"],
         num_classes=cfg["num_classes"],
-        pretrained=cfg["teacher_pretrained"],
+        pretrained=(checkpoint_path is None and cfg["teacher_pretrained"]),
     ).to(device)
+    if checkpoint_path and os.path.exists(checkpoint_path):
+        teacher.load_state_dict(torch.load(checkpoint_path, weights_only=True, map_location=device))
+        print(f"Loaded: {checkpoint_path}")
+    return teacher
 
-    # 3) 损失函数（FocalLoss + 类别权重 — 始终用原始分布计算 alpha）
-    #    DRW 只改变采样分布，不改 loss 权重，避免叠加导致过矫正
+
+# ============================================================
+# Phase 1: Fast+MU（标准采样，MixUp α=0.2，warmup）
+# ============================================================
+def train_teacher_phase1(teacher=None):
+    """
+    Phase 1: Fast+MU — 标准采样 + MixUp α=0.2 + warmup
+
+    Args:
+        teacher: 可选，已创建的模型（链式调用时传入，None 则自动创建）
+    Returns:
+        teacher: 加载了 phase1 best EMA 权重的模型
+    """
+    cfg = CONFIG
+    device = torch.device(cfg["device"])
+    ckpt_dir, phase_best, _, _ = _get_phase_paths(cfg)
+    epochs = cfg["teacher_phase1_epochs"]  # 12
+    start_epoch = 0
+
+    print(f"Using device: {device}")
+    print(f"\n{'='*60}")
+    print(f"  Phase 1: Fast+MU — {epochs} epochs, standard sampling")
+    print(f"{'='*60}")
+
+    # 数据加载（标准采样）
+    train_loader, val_loader, class_counts, class_names = create_dataloaders(cloudy_oversample=False)
+
+    # 模型
+    if teacher is None:
+        teacher = _create_model(cfg, device, None)
+
+    # 损失函数
     alpha = compute_class_weights(class_counts)
     criterion = FocalLoss(
         alpha=alpha, gamma=cfg["focal_gamma"],
         label_smoothing=cfg.get("label_smoothing", 0.0),
     )
 
-    # 4) 优化器 + SAM 包装 + 调度器
-    base_optimizer = optim.AdamW(
-        teacher.parameters(),
-        lr=cfg["teacher_lr"],
+    # 优化器 + warmup + cosine 调度
+    optimizer = optim.AdamW(
+        teacher.parameters(), lr=cfg["teacher_lr"],
         weight_decay=cfg["teacher_weight_decay"],
     )
-    sam = SAM(base_optimizer, rho=cfg.get("sam_rho", 0.05))  # ④ SAM
-    # 调度器：Linear warmup → CosineAnnealing
     warmup_epochs = cfg.get("warmup_epochs", 2)
-    if warmup_epochs > 0:
-        warmup = LinearLR(base_optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_epochs)
-        cosine = CosineAnnealingLR(base_optimizer, T_max=cfg["teacher_epochs"] - warmup_epochs)
-        scheduler = SequentialLR(base_optimizer, schedulers=[warmup, cosine], milestones=[warmup_epochs])
-    else:
-        scheduler = CosineAnnealingLR(base_optimizer, T_max=cfg["teacher_epochs"])
+    warmup = LinearLR(optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_epochs)
+    cosine = CosineAnnealingLR(optimizer, T_max=epochs - warmup_epochs)
+    scheduler = SequentialLR(optimizer, schedulers=[warmup, cosine], milestones=[warmup_epochs])
 
-    # ⑤ EMA 权重平滑
+    # EMA
     ema = EMA(teacher, decay=cfg.get("ema_decay", 0.999))
 
-    # TensorBoard 日志
+    # Logger
     logger = TrainLogger(log_dir="results/tb_results/teacher", use_tb=cfg["use_tb"])
 
-    # 5) 训练循环
-    best_f1 = 0.0
-    backup_dir = "results/checkpoints"
-    os.makedirs(backup_dir, exist_ok=True)
-    # BF16: 与 FP32 相同动态范围，无需 GradScaler，RTX 5070+ 原生支持
+    # 训练配置
     use_amp = cfg["fp16"] and torch.cuda.is_available()
+    mixup_alpha = cfg.get("mixup_alpha", 0.2)
+    best_f1 = 0.0
 
-    sam_start_epoch = cfg["teacher_epochs"] - 5  # 后 5 轮启用 SAM，给足 Phase I+II 收敛时间
-    overfit_warn_threshold = 0.05  # train_f1 - val_f1 > 5% 时告警
-    mixup_alpha = cfg.get("mixup_alpha", 0.0)  # MixUp 混合强度 (Zhang et al., ICLR 2018)
+    print(f"Classes: {class_names}")
+    print(f"Class distribution: {dict(zip(class_names, class_counts.astype(int)))}")
+    print(f"Train samples: {len(train_loader.dataset)}, Val samples: {len(val_loader.dataset)}")
+    print(f"LR: {cfg['teacher_lr']}, MixUp α: {mixup_alpha}, Warmup: {warmup_epochs} epochs\n")
 
-    print(f"\nDRW schedule: epoch 0-{drw_start_epoch-1} standard, epoch {drw_start_epoch}-{cfg['teacher_epochs']-1} cloudy oversample")
-    print(f"SAM schedule: epoch 0-{sam_start_epoch-1} Fast, epoch {sam_start_epoch}-{cfg['teacher_epochs']-1} SAM")
-    print(f"MixUp: {'alpha=' + str(mixup_alpha) if mixup_alpha > 0 else 'OFF'}\n")
+    for epoch in range(start_epoch, start_epoch + epochs):
+        global_epoch = epoch  # Phase 1 从 0 开始
+        mode_tag = "Fast+MU"
 
-    for epoch in range(cfg["teacher_epochs"]):
-        use_sam = epoch >= sam_start_epoch
-        use_os = epoch >= drw_start_epoch  # DRW 延迟过采样
-        # SAM 阶段关闭 MixUp，避免正则化叠加导致扰动噪声放大
-        epoch_mixup_alpha = 0.0 if use_sam else mixup_alpha
-        mode_parts = []
-        if use_sam:
-            mode_parts.append("SAM")
-        else:
-            mode_parts.append("Fast")
-        if use_os:
-            mode_parts.append("OS")
-        if epoch_mixup_alpha > 0:
-            mode_parts.append("MU")
-        mode_tag = "+".join(mode_parts)
-
-        # DRW: 根据阶段选择 DataLoader
-        train_loader = train_loader_os if use_os else train_loader_std
-
-        # --- Train ---
         teacher.train()
         train_loss = 0.0
-        train_preds, train_labels_list = [], []  # 收集训练集预测用于过拟合监控
-        pbar = tqdm(train_loader, desc=f"Teacher Epoch {epoch+1}/{cfg['teacher_epochs']} [{mode_tag}]")
+        train_preds, train_labels_list = [], []
+
+        pbar = tqdm(train_loader, desc=f"P1 Epoch {epoch}/{start_epoch+epochs-1} [{mode_tag}]")
         for images, labels in pbar:
             images, labels = images.to(device), labels.to(device)
 
-            # ⑥ MixUp: 生成虚拟混合样本 (Zhang et al., ICLR 2018)
-            mixed_images, labels_a, labels_b, lam = mixup_data(images, labels, epoch_mixup_alpha)
+            # MixUp
+            mixed_images, labels_a, labels_b, lam = mixup_data(images, labels, mixup_alpha)
 
-            if use_sam:
-                # ---- SAM first pass: MixUp forward-backward ----
-                sam.zero_grad()
-                with autocast('cuda', dtype=torch.bfloat16, enabled=use_amp):
-                    logits = teacher(mixed_images)
-                    loss = lam * criterion(logits, labels_a) + (1 - lam) * criterion(logits, labels_b)
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
-                sam.first_step()
-                base_optimizer.zero_grad()
+            # Fast forward-backward
+            optimizer.zero_grad()
+            with autocast('cuda', dtype=torch.bfloat16, enabled=use_amp):
+                logits = teacher(mixed_images)
+                loss = lam * criterion(logits, labels_a) + (1 - lam) * criterion(logits, labels_b)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
+            optimizer.step()
 
-                # ---- SAM second pass: perturbed MixUp forward-backward ----
-                with autocast('cuda', dtype=torch.bfloat16, enabled=use_amp):
-                    logits_perturbed = teacher(mixed_images)
-                    loss_perturbed = lam * criterion(logits_perturbed, labels_a) + (1 - lam) * criterion(logits_perturbed, labels_b)
-                loss_perturbed.backward()
-                torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
-                sam.second_step()
+            train_preds.extend(logits.argmax(dim=1).cpu().numpy())
+            train_labels_list.extend(labels_a.cpu().numpy())
 
-                # 用 first pass（未扰动）的预测做监控（labels_a 为主标签）
-                train_preds.extend(logits.argmax(dim=1).cpu().numpy())
-                train_labels_list.extend(labels_a.cpu().numpy())
-            else:
-                # ---- Fast mode: MixUp forward-backward ----
-                base_optimizer.zero_grad()
-                with autocast('cuda', dtype=torch.bfloat16, enabled=use_amp):
-                    logits = teacher(mixed_images)
-                    loss = lam * criterion(logits, labels_a) + (1 - lam) * criterion(logits, labels_b)
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
-                base_optimizer.step()
-
-                train_preds.extend(logits.argmax(dim=1).cpu().numpy())
-                train_labels_list.extend(labels_a.cpu().numpy())
-
-            # ⑤ EMA 更新（每步）
             ema.update(teacher)
-
             train_loss += loss.item()
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
         scheduler.step()
 
-        # 计算训练集 F1（过拟合监控）
         train_f1 = f1_score(train_labels_list, train_preds, average='macro')
 
-        # --- Validate（使用 EMA 权重）---
+        # Validate (EMA)
         ema.apply_shadow(teacher)
-        val_f1, val_acc, per_class_f1 = evaluate(
-            teacher, val_loader, device, class_names,
-        )
+        val_f1, val_acc, per_class_f1 = evaluate(teacher, val_loader, device, class_names)
         ema.restore(teacher)
 
         avg_loss = train_loss / len(train_loader)
         gap = train_f1 - val_f1
         gap_str = f"│ Gap={gap:+.4f}"
-        if gap > overfit_warn_threshold:
-            gap_str += f" ⚠️ OVERFIT"
-        print(f"Epoch {epoch+1}: Train Loss={avg_loss:.4f} "
+        if gap > 0.05:
+            gap_str += " ⚠️ OVERFIT"
+
+        print(f"Epoch {global_epoch}: Train Loss={avg_loss:.4f} "
               f"│ Train F1={train_f1:.4f} │ Val F1={val_f1:.4f} {gap_str} │ Val Acc={val_acc:.2f}%")
 
-        # TensorBoard 记录（F1 为主监控，含 per-class + gap）
-        logger.log_metrics("train", {"loss": avg_loss, "F1_Macro": train_f1}, epoch + 1)
+        # TensorBoard
+        logger.log_metrics("train", {"loss": avg_loss, "F1_Macro": train_f1}, global_epoch)
         val_metrics = {"F1_Macro": val_f1, "Acc": val_acc, "Overfit_Gap": gap}
         for cls_name, cls_f1 in per_class_f1.items():
             val_metrics[f"F1_{cls_name}"] = cls_f1
-        logger.log_metrics("val", val_metrics, epoch + 1)
+        logger.log_metrics("val", val_metrics, global_epoch)
 
-        # 保存最佳
+        # 保存最佳（phase best + 全局 best）
         if val_f1 > best_f1:
             best_f1 = val_f1
-            # 保存 EMA 平滑后的权重
-            ema.apply_shadow(teacher)
-            torch.save(teacher.state_dict(), cfg["teacher_ckpt"])
-            ema.restore(teacher)
-            print(f"  ✓ Best teacher saved (EMA)! F1={best_f1:.4f}")
+            _save_best(teacher, ema, phase_best, best_f1)
+            _save_best(teacher, ema, cfg["teacher_ckpt"], best_f1)
 
-        # 周期备份：每 epoch 保存到独立目录，保留最近 20 个
-        ckpt_path = f"{backup_dir}/teacher_epoch_{epoch+1:02d}.pth"
-        ema.apply_shadow(teacher)
-        torch.save(teacher.state_dict(), ckpt_path)
-        ema.restore(teacher)
-        # 清理 20 步以外的旧备份
-        old_ckpt = f"{backup_dir}/teacher_epoch_{epoch+1-20:02d}.pth"
-        if os.path.exists(old_ckpt):
-            os.remove(old_ckpt)
+        # 周期备份
+        _save_epoch_ckpt(teacher, ema, ckpt_dir, global_epoch)
 
-    print(f"\nTeacher training done. Best F1: {best_f1:.4f}")
-
+    print(f"\nPhase 1 done. Best F1: {best_f1:.4f}")
     logger.close()
 
-    # 加载最佳 EMA 权重
-    teacher.load_state_dict(torch.load(cfg["teacher_ckpt"], weights_only=False))
+    # 加载 phase best
+    teacher.load_state_dict(torch.load(phase_best, weights_only=False))
+    return teacher
+
+
+# ============================================================
+# Phase 2: Fast+OS+MU（DRW 过采样，MixUp α=0.2）
+# ============================================================
+def train_teacher_phase2(teacher=None):
+    """
+    Phase 2: Fast+OS+MU — DRW 过采样 + MixUp α=0.2
+
+    自动从 phase1 best 加载权重（如 teacher=None）。
+    重新初始化优化器（低 LR）和 EMA。
+
+    Args:
+        teacher: 可选，链式调用时传入 Phase 1 返回的模型
+    Returns:
+        teacher: 加载了 phase2 best EMA 权重的模型
+    """
+    cfg = CONFIG
+    device = torch.device(cfg["device"])
+    ckpt_dir, phase1_best, phase_best, _ = _get_phase_paths(cfg)
+    epochs = cfg["teacher_phase2_epochs"]  # 3
+    start_epoch = cfg["teacher_phase1_epochs"]  # 12
+
+    print(f"Using device: {device}")
+    print(f"\n{'='*60}")
+    print(f"  Phase 2: Fast+OS+MU — {epochs} epochs, DRW oversampling")
+    print(f"{'='*60}")
+
+    # 数据加载（standard 用于 class info，oversample 用于训练）
+    _, val_loader, class_counts, class_names = create_dataloaders(cloudy_oversample=False)
+    train_loader, _, _, _ = create_dataloaders(cloudy_oversample=True)
+
+    # 模型：从 phase1 best 加载
+    if teacher is None:
+        teacher = _create_model(cfg, device, phase1_best)
+
+    # 损失函数
+    alpha = compute_class_weights(class_counts)
+    criterion = FocalLoss(
+        alpha=alpha, gamma=cfg["focal_gamma"],
+        label_smoothing=cfg.get("label_smoothing", 0.0),
+    )
+
+    # 优化器（半量 LR，无 warmup）
+    phase2_lr = cfg["teacher_lr"] * 0.5
+    optimizer = optim.AdamW(
+        teacher.parameters(), lr=phase2_lr,
+        weight_decay=cfg["teacher_weight_decay"],
+    )
+    scheduler = CosineAnnealingLR(optimizer, T_max=epochs)
+
+    # EMA（从当前权重重新初始化 shadow）
+    ema = EMA(teacher, decay=cfg.get("ema_decay", 0.999))
+
+    # Logger
+    logger = TrainLogger(log_dir="results/tb_results/teacher", use_tb=cfg["use_tb"])
+
+    # 训练配置
+    use_amp = cfg["fp16"] and torch.cuda.is_available()
+    mixup_alpha = cfg.get("mixup_alpha", 0.2)
+    best_f1 = 0.0
+
+    print(f"Classes: {class_names}")
+    print(f"Train samples: {len(train_loader.dataset)}, Val samples: {len(val_loader.dataset)}")
+    print(f"LR: {phase2_lr}, MixUp α: {mixup_alpha}\n")
+
+    for epoch in range(start_epoch, start_epoch + epochs):
+        global_epoch = epoch  # 12, 13, 14
+        mode_tag = "Fast+OS+MU"
+
+        teacher.train()
+        train_loss = 0.0
+        train_preds, train_labels_list = [], []
+
+        pbar = tqdm(train_loader, desc=f"P2 Epoch {epoch}/{start_epoch+epochs-1} [{mode_tag}]")
+        for images, labels in pbar:
+            images, labels = images.to(device), labels.to(device)
+
+            mixed_images, labels_a, labels_b, lam = mixup_data(images, labels, mixup_alpha)
+
+            optimizer.zero_grad()
+            with autocast('cuda', dtype=torch.bfloat16, enabled=use_amp):
+                logits = teacher(mixed_images)
+                loss = lam * criterion(logits, labels_a) + (1 - lam) * criterion(logits, labels_b)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
+            optimizer.step()
+
+            train_preds.extend(logits.argmax(dim=1).cpu().numpy())
+            train_labels_list.extend(labels_a.cpu().numpy())
+
+            ema.update(teacher)
+            train_loss += loss.item()
+            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+
+        scheduler.step()
+
+        train_f1 = f1_score(train_labels_list, train_preds, average='macro')
+
+        ema.apply_shadow(teacher)
+        val_f1, val_acc, per_class_f1 = evaluate(teacher, val_loader, device, class_names)
+        ema.restore(teacher)
+
+        avg_loss = train_loss / len(train_loader)
+        gap = train_f1 - val_f1
+        gap_str = f"│ Gap={gap:+.4f}"
+        if gap > 0.05:
+            gap_str += " ⚠️ OVERFIT"
+
+        print(f"Epoch {global_epoch}: Train Loss={avg_loss:.4f} "
+              f"│ Train F1={train_f1:.4f} │ Val F1={val_f1:.4f} {gap_str} │ Val Acc={val_acc:.2f}%")
+
+        logger.log_metrics("train", {"loss": avg_loss, "F1_Macro": train_f1}, global_epoch)
+        val_metrics = {"F1_Macro": val_f1, "Acc": val_acc, "Overfit_Gap": gap}
+        for cls_name, cls_f1 in per_class_f1.items():
+            val_metrics[f"F1_{cls_name}"] = cls_f1
+        logger.log_metrics("val", val_metrics, global_epoch)
+
+        if val_f1 > best_f1:
+            best_f1 = val_f1
+            _save_best(teacher, ema, phase_best, best_f1)
+            _save_best(teacher, ema, cfg["teacher_ckpt"], best_f1)
+
+        _save_epoch_ckpt(teacher, ema, ckpt_dir, global_epoch)
+
+    print(f"\nPhase 2 done. Best F1: {best_f1:.4f}")
+    logger.close()
+
+    teacher.load_state_dict(torch.load(phase_best, weights_only=False))
+    return teacher
+
+
+# ============================================================
+# Phase 3: SAM+OS+MU(lite)（轻量 MixUp α=0.05，SAM 收尾）
+# ============================================================
+def train_teacher_phase3(teacher=None):
+    """
+    Phase 3: SAM+OS+MU(lite) — DRW 过采样 + SAM 优化器 + 轻量 MixUp
+
+    自动从 phase2 best 加载权重（如 teacher=None）。
+    重新初始化优化器（低 LR）+ SAM 包装 + EMA。
+
+    Args:
+        teacher: 可选，链式调用时传入 Phase 2 返回的模型
+    Returns:
+        teacher: 加载了 phase3 best EMA 权重的模型
+    """
+    cfg = CONFIG
+    device = torch.device(cfg["device"])
+    ckpt_dir, _, phase2_best, phase_best = _get_phase_paths(cfg)
+    epochs = cfg["teacher_phase3_epochs"]  # 5
+    start_epoch = cfg["teacher_phase1_epochs"] + cfg["teacher_phase2_epochs"]  # 15
+
+    print(f"Using device: {device}")
+    print(f"\n{'='*60}")
+    print(f"  Phase 3: SAM+OS+MU(lite) — {epochs} epochs, SAM optimizer")
+    print(f"{'='*60}")
+
+    # 数据加载
+    _, val_loader, class_counts, class_names = create_dataloaders(cloudy_oversample=False)
+    train_loader, _, _, _ = create_dataloaders(cloudy_oversample=True)
+
+    # 模型：从 phase2 best 加载
+    if teacher is None:
+        teacher = _create_model(cfg, device, phase2_best)
+
+    # 损失函数
+    alpha = compute_class_weights(class_counts)
+    criterion = FocalLoss(
+        alpha=alpha, gamma=cfg["focal_gamma"],
+        label_smoothing=cfg.get("label_smoothing", 0.0),
+    )
+
+    # 优化器（1/5 LR）+ SAM 包装，无 warmup
+    phase3_lr = cfg["teacher_lr"] * 0.2
+    base_optimizer = optim.AdamW(
+        teacher.parameters(), lr=phase3_lr,
+        weight_decay=cfg["teacher_weight_decay"],
+    )
+    sam = SAM(base_optimizer, rho=cfg.get("sam_rho", 0.05))
+    scheduler = CosineAnnealingLR(base_optimizer, T_max=epochs)
+
+    # EMA
+    ema = EMA(teacher, decay=cfg.get("ema_decay", 0.999))
+
+    # Logger
+    logger = TrainLogger(log_dir="results/tb_results/teacher", use_tb=cfg["use_tb"])
+
+    # 训练配置
+    use_amp = cfg["fp16"] and torch.cuda.is_available()
+    mixup_alpha = cfg.get("sam_mixup_alpha", 0.05)  # 轻量 MixUp
+    best_f1 = 0.0
+
+    print(f"Classes: {class_names}")
+    print(f"Train samples: {len(train_loader.dataset)}, Val samples: {len(val_loader.dataset)}")
+    print(f"LR: {phase3_lr}, MixUp α: {mixup_alpha}, SAM ρ: {cfg.get('sam_rho', 0.05)}\n")
+
+    for epoch in range(start_epoch, start_epoch + epochs):
+        global_epoch = epoch  # 15, 16, 17, 18, 19
+        mode_tag = "SAM+OS+MU"
+
+        teacher.train()
+        train_loss = 0.0
+        train_preds, train_labels_list = [], []
+
+        pbar = tqdm(train_loader, desc=f"P3 Epoch {epoch}/{start_epoch+epochs-1} [{mode_tag}]")
+        for images, labels in pbar:
+            images, labels = images.to(device), labels.to(device)
+
+            mixed_images, labels_a, labels_b, lam = mixup_data(images, labels, mixup_alpha)
+
+            # ---- SAM first pass ----
+            sam.zero_grad()
+            with autocast('cuda', dtype=torch.bfloat16, enabled=use_amp):
+                logits = teacher(mixed_images)
+                loss = lam * criterion(logits, labels_a) + (1 - lam) * criterion(logits, labels_b)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
+            sam.first_step()
+            base_optimizer.zero_grad()
+
+            # ---- SAM second pass ----
+            with autocast('cuda', dtype=torch.bfloat16, enabled=use_amp):
+                logits_perturbed = teacher(mixed_images)
+                loss_perturbed = lam * criterion(logits_perturbed, labels_a) + (1 - lam) * criterion(logits_perturbed, labels_b)
+            loss_perturbed.backward()
+            torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
+            sam.second_step()
+
+            train_preds.extend(logits.argmax(dim=1).cpu().numpy())
+            train_labels_list.extend(labels_a.cpu().numpy())
+
+            ema.update(teacher)
+            train_loss += loss.item()
+            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+
+        scheduler.step()
+
+        train_f1 = f1_score(train_labels_list, train_preds, average='macro')
+
+        ema.apply_shadow(teacher)
+        val_f1, val_acc, per_class_f1 = evaluate(teacher, val_loader, device, class_names)
+        ema.restore(teacher)
+
+        avg_loss = train_loss / len(train_loader)
+        gap = train_f1 - val_f1
+        gap_str = f"│ Gap={gap:+.4f}"
+        if gap > 0.05:
+            gap_str += " ⚠️ OVERFIT"
+
+        print(f"Epoch {global_epoch}: Train Loss={avg_loss:.4f} "
+              f"│ Train F1={train_f1:.4f} │ Val F1={val_f1:.4f} {gap_str} │ Val Acc={val_acc:.2f}%")
+
+        logger.log_metrics("train", {"loss": avg_loss, "F1_Macro": train_f1}, global_epoch)
+        val_metrics = {"F1_Macro": val_f1, "Acc": val_acc, "Overfit_Gap": gap}
+        for cls_name, cls_f1 in per_class_f1.items():
+            val_metrics[f"F1_{cls_name}"] = cls_f1
+        logger.log_metrics("val", val_metrics, global_epoch)
+
+        if val_f1 > best_f1:
+            best_f1 = val_f1
+            _save_best(teacher, ema, phase_best, best_f1)
+            _save_best(teacher, ema, cfg["teacher_ckpt"], best_f1)
+
+        _save_epoch_ckpt(teacher, ema, ckpt_dir, global_epoch)
+
+    print(f"\nPhase 3 done. Best F1: {best_f1:.4f}")
+    logger.close()
+
+    teacher.load_state_dict(torch.load(phase_best, weights_only=False))
+    return teacher
+
+
+# ============================================================
+# 全流程 wrapper（向后兼容）
+# ============================================================
+def train_teacher():
+    """训练教师模型全流程（向后兼容）"""
+    teacher = train_teacher_phase1()
+    teacher = train_teacher_phase2(teacher)
+    teacher = train_teacher_phase3(teacher)
+    print(f"\n{'='*60}")
+    print(f"✓ 教师模型训练完成（3 阶段）")
+    print(f"{'='*60}")
     return teacher
 
 
