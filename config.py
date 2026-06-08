@@ -76,25 +76,25 @@ CONFIG = {
     "teacher_epochs": 20,            # 全流程总轮数
     "teacher_phase1_epochs": 12,    # Phase 1: Fast+MU（标准采样）
     "teacher_phase2_epochs": 3,     # Phase 2: Fast+OS+MU（DRW 过采样）
-    "teacher_phase3_epochs": 5,     # Phase 3: SAM+OS+MU(lite)（轻量 MixUp 收尾）
+    "teacher_phase3_epochs": 5,     # Phase 3: SAM+OS（SAM 优化器收尾，关闭 MixUp）
     "teacher_lr": 5e-5,  # 380 原生分辨率下微调，保守 LR 保护预训练特征
     "teacher_weight_decay": 1e-4,
     "warmup_epochs": 2,             # 学习率 warmup 轮数（LinearLR 0.1→1.0）
     "sam_epochs": 5,                # SAM 最后 5 轮收尾
-    "sam_mixup_alpha": 0.05,        # SAM 阶段轻量 MixUp（避免过正则化，保留输入多样性）
+    "sam_mixup_alpha": 0.0,         # SAM 阶段关闭 MixUp（避免正则化叠加导致过正则化）
 
     # ---- 知识蒸馏 ----
     "student_model": "efficientnet_b0",  # timm 模型名
     "kd_temperature": 4.0,               # 蒸馏温度 T
     "kd_alpha": 0.7,                     # 软标签损失权重
     "kd_feature_weight": 0.1,            # 中间层特征损失权重
-    "kd_epochs": 15,                     # 70分钟时限下缩减至15轮
+    "kd_epochs": 15,                     # 知识蒸馏轮数
     "kd_lr": 1e-3,
 
-    # ---- 结构化剪枝 ----
+    # ---- 结构化剪枝（可选，仅速度需要时启用）----
     "prune_ratio": 0.4,           # 最终剪枝比例
     "prune_iterations": 2,        # 渐进剪枝轮数（2轮: 20%→40%）
-    "prune_finetune_epochs": 5,   # 剪枝后微调轮数（70分钟内缩减）
+    "prune_finetune_epochs": 5,   # 剪枝后微调轮数
     "prune_finetune_lr": 1e-4,
 
     # ---- 通用 ----
@@ -119,6 +119,7 @@ CONFIG = {
     # ---- 路径 ----
     "teacher_ckpt_dir": "results/checkpoints/teacher",
     "teacher_ckpt": "results/checkpoints/teacher/teacher_best.pth",
+    "distill_ckpt_dir": "results/checkpoints/distill",
     "distilled_ckpt": "results/student_distilled_best.pth",
     "pruned_ckpt": "results/student_pruned_final.pth",
     "onnx_path": "results/weather_model.onnx",

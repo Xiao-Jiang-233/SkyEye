@@ -6,7 +6,7 @@
     # Fast+OS+MU（无 SAM）
     python scripts/continue_teacher.py results/checkpoints/teacher/teacher_epoch_14.pth --epochs 5
 
-    # SAM+OS+MU(lite)（从 epoch 14 继续，SAM 5 轮收尾）
+    # SAM+OS（从 epoch 14 继续，SAM 5 轮收尾，关闭 MixUp）
     python scripts/continue_teacher.py results/checkpoints/teacher/teacher_epoch_14.pth --epochs 5 --use_sam
 """
 import argparse
@@ -35,14 +35,14 @@ from training.train_teacher import FocalLoss, EMA, SAM, mixup_data, evaluate
 
 
 def continue_teacher(checkpoint_path, extra_epochs=5, lr=None, mixup_alpha=0.2, use_sam=False,
-                     sam_rho=0.05, sam_mixup_alpha=0.05):
+                     sam_rho=0.05, sam_mixup_alpha=0.0):  # SAM 阶段关闭 MixUp
     """从 checkpoint 继续训练教师模型"""
     cfg = CONFIG
     device = torch.device(cfg["device"])
     print(f"Using device: {device}")
     print(f"Checkpoint: {checkpoint_path}")
     print(f"Extra epochs: {extra_epochs}")
-    print(f"Mode: {'SAM+OS+MU(lite)' if use_sam else 'Fast+OS+MU'}")
+    print(f"Mode: {'SAM+OS' if use_sam else 'Fast+OS+MU'}")
 
     # 1) 数据加载 — 使用 oversample 版本（DRW 阶段）
     print("\n--- Loading Data ---")
@@ -97,9 +97,7 @@ def continue_teacher(checkpoint_path, extra_epochs=5, lr=None, mixup_alpha=0.2, 
     print(f"BF16 AMP: {'ON' if use_amp else 'OFF'}\n")
 
     for epoch in range(extra_epochs):
-        mode_tag = "SAM+OS+MU" if use_sam else "Fast+OS+MU"
-        if use_sam and sam_mixup_alpha == 0:
-            mode_tag = "SAM+OS"
+        mode_tag = "SAM+OS" if use_sam else "Fast+OS+MU"
 
         teacher.train()
         train_loss = 0.0

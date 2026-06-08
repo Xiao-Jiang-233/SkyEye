@@ -112,7 +112,7 @@ class SAM:
 
     原理：先在梯度方向做一步扰动（w + ε·g/||g||），在该点计算损失
           再回退并对扰动点的梯度做 optimizer.step()
-          训练时间 ×2（两次 forward + backward），但 70 分钟内仍可接受
+          训练时间 ×2（两次 forward + backward），本地训练不限时完全可接受
 
     Args:
         base_optimizer: torch.optim.Optimizer — 基础优化器（如 AdamW）
@@ -556,11 +556,11 @@ def train_teacher_phase2(teacher=None):
 
 
 # ============================================================
-# Phase 3: SAM+OS+MU(lite)（轻量 MixUp α=0.05，SAM 收尾）
+# Phase 3: SAM+OS（SAM 优化器收尾，关闭 MixUp）
 # ============================================================
 def train_teacher_phase3(teacher=None):
     """
-    Phase 3: SAM+OS+MU(lite) — DRW 过采样 + SAM 优化器 + 轻量 MixUp
+    Phase 3: SAM+OS — DRW 过采样 + SAM 优化器，关闭 MixUp
 
     自动从 phase2 best 加载权重（如 teacher=None）。
     重新初始化优化器（低 LR）+ SAM 包装 + EMA。
@@ -578,7 +578,7 @@ def train_teacher_phase3(teacher=None):
 
     print(f"Using device: {device}")
     print(f"\n{'='*60}")
-    print(f"  Phase 3: SAM+OS+MU(lite) — {epochs} epochs, SAM optimizer")
+    print(f"  Phase 3: SAM+OS — {epochs} epochs, SAM optimizer, MixUp disabled")
     print(f"{'='*60}")
 
     # 数据加载
@@ -622,7 +622,7 @@ def train_teacher_phase3(teacher=None):
 
     for epoch in range(start_epoch, start_epoch + epochs):
         global_epoch = epoch  # 15, 16, 17, 18, 19
-        mode_tag = "SAM+OS+MU"
+        mode_tag = "SAM+OS"
 
         teacher.train()
         train_loss = 0.0
