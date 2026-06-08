@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 项目名：**SkyEye**，天气图片分类任务。`class_names` 共 7 类（6 核心天气类 + `other` 兜底类），当前训练 6 类（`skip_classes: ["other"]`）。
 dew/rime/sandstorm 通过 `class_aliases` 映射到 `other`，暂不参与训练（补充数据集仅 ~700~1200 张，样本量不足）。
-技术方案：EfficientNet-B4（教师）→ 知识蒸馏 → EfficientNet-B0（学生）→ 结构化剪枝 → ONNX 导出 → INT8 量化。
+技术方案：EfficientNet-B4（教师）→ 知识蒸馏 → EfficientNet-B0（学生）→ ONNX 导出 → INT8 量化。（结构化剪枝可选，仅速度需要时启用）
 比赛约束：GPU 训练 → CPU 推理，推理总时限 70 分钟（训练本地不限时）。评分 Macro F1 × 100，同分按推理速度排名。规则详见 [docs/competition-rules.md](docs/competition-rules.md) 和 [docs/competition-faq.md](docs/competition-faq.md)。
 当前教师最优：**Macro F1 0.8933 / Acc 89.16%**（全量 60k 评估），瓶颈在 cloudy↔sunny 混淆。
 设计文档：[docs/design-efficientnet-kd-pruning.md](docs/design-efficientnet-kd-pruning.md)
@@ -169,7 +169,7 @@ tensorboard --logdir results/tb_results/
 
 ### 已知经验
 
-- **SAM + MixUp 叠加会导致过度正则化**：epoch 11-15 SAM+MU 时 Val F1 低于 epoch 10 Fast+MU（0.8615 vs 0.8636），改为 SAM 阶段关闭 MixUp 后缓解
+- **SAM + MixUp 叠加会导致过度正则化**：SAM 阶段同时使用 MixUp 时 Val F1 反而下降，改为 SAM 阶段关闭 MixUp 后缓解
 - **cloudy↔sunny 是最大混淆对**：混淆矩阵中 sunny→cloudy 1510 张（17.4%），cloudy 的 Precision 仅 0.71
 - **thundery/snowy 几乎完美**：F1 > 0.95，特征鲜明
 

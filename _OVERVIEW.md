@@ -1,6 +1,6 @@
 # SkyEye — 天气图片分类
 
-基于 **EfficientNet-B4 → 知识蒸馏 → B0 → 结构化剪枝 → ONNX → INT8 量化** 的天气分类管线。
+基于 **EfficientNet-B4 → 知识蒸馏 → B0 → ONNX → INT8 量化** 的天气分类管线（剪枝可选）。
 
 ## 功能
 
@@ -29,7 +29,7 @@ Pruned EfficientNet-B0
 CPU Inference (ONNX Runtime)
 ```
 
-训练 GPU，推理 CPU。总时限 70 分钟。
+训练本地 GPU 不限时，推理 CPU 总时限 70 分钟。
 
 ## 运行环境
 
@@ -63,7 +63,7 @@ SkyEye/
 ├── training/
 │   ├── train_teacher.py           # 教师训练 (FocalLoss + 混合精度)
 │   ├── distill_student.py         # 知识蒸馏入口
-│   └── prune_finetune.py          # 结构化剪枝 + 渐进微调
+│   └── prune_finetune.py          # (可选) 结构化剪枝 + 渐进微调
 ├── inference/
 │   ├── export_onnx.py             # ONNX 导出 + INT8 量化 + CPU 测速
 │   └── infer.py                   # 单张/批量推理
@@ -80,7 +80,7 @@ SkyEye/
 
 > 数据集目录使用 `_data/` 前缀，已在 `.gitignore` 中排除。
 
-## 训练流程（70 分钟 GPU 时限）
+## 训练流程（本地不限时）
 
 | 阶段                      | 内容                                        | 预估耗时   |
 | ------------------------- | ------------------------------------------- | ---------- |
