@@ -8,7 +8,7 @@
 
 **Tech Stack:** PyTorch, timm, ONNX Runtime, scikit-learn, tqdm, Mo 平台 (JupyterLab + GPU)
 
-**Design Doc:** `docs/superpowers/specs/2026-06-03-efficientnet-kd-pruning-design.md`
+**Design Doc:** [design-efficientnet-kd-pruning.md](design-efficientnet-kd-pruning.md)
 
 ---
 

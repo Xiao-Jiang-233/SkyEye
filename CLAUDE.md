@@ -7,9 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 项目名：**SkyEye**，天气图片分类任务。`class_names` 共 7 类（6 核心天气类 + `other` 兜底类），当前训练 6 类（`skip_classes: ["other"]`）。
 dew/rime/sandstorm 通过 `class_aliases` 映射到 `other`，暂不参与训练（补充数据集仅 ~700~1200 张，样本量不足）。
 技术方案：EfficientNet-B4（教师）→ 知识蒸馏 → EfficientNet-B0（学生）→ 结构化剪枝 → ONNX 导出 → INT8 量化。
-比赛约束：GPU 训练 → CPU 推理，总时限 70 分钟。
+比赛约束：GPU 训练 → CPU 推理，推理总时限 70 分钟（训练本地不限时）。评分 Macro F1 × 100，同分按推理速度排名。规则详见 [docs/competition-rules.md](docs/competition-rules.md) 和 [docs/competition-faq.md](docs/competition-faq.md)。
 当前教师最优：**Macro F1 0.8933 / Acc 89.16%**（全量 60k 评估），瓶颈在 cloudy↔sunny 混淆。
-设计文档：`docs/superpowers/specs/2026-06-03-efficientnet-kd-pruning-design.md`
+设计文档：[docs/design-efficientnet-kd-pruning.md](docs/design-efficientnet-kd-pruning.md)
 
 ## 开发环境
 
@@ -42,8 +42,12 @@ dew/rime/sandstorm 通过 `class_aliases` 映射到 `other`，暂不参与训练
 | `results/checkpoints/`   | 每 epoch 周期备份（保留最近 20 个，自动滚动清理）                               |
 | `results/tb_results/`    | TensorBoard 日志存放处                                                         |
 | `_OVERVIEW.md`           | 项目介绍，**从 README.md 自动同步**，请勿手动编辑，修改 README.md 后 pull 即可 |
-| `docs/接口文档.md`       | 模块 API 接口文档                                                              |
-| `app_spec.yml`           | 定义模型输入输出，用于部署服务（待创建）                                       |
+| `docs/接口文档.md`                        | 模块 API 接口文档                                                              |
+| `docs/design-efficientnet-kd-pruning.md`  | 技术方案设计文档                                                               |
+| `docs/plan-efficientnet-kd-pruning.md`    | 实施计划                                                                       |
+| `docs/competition-rules.md`               | 比赛规则文件                                                                   |
+| `docs/competition-faq.md`                 | 比赛 FAQ                                                                       |
+| `app_spec.yml`                            | 定义模型输入输出，用于部署服务（待创建）                                       |
 
 ## 已导入的数据集
 

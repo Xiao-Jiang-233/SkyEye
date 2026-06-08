@@ -115,4 +115,7 @@ Jupyter Notebook 中按顺序执行各 Cell，或使用 CLI：`python scripts/lo
 | ---- | ---- |
 | [CLAUDE.md](CLAUDE.md) | 项目开发指南（配置、数据集、训练策略） |
 | [docs/接口文档.md](docs/接口文档.md) | 模块 API 接口文档 |
-| [docs/superpowers/specs/](docs/superpowers/specs/) | 技术方案设计 |
+| [docs/design-efficientnet-kd-pruning.md](docs/design-efficientnet-kd-pruning.md) | 技术方案设计 |
+| [docs/plan-efficientnet-kd-pruning.md](docs/plan-efficientnet-kd-pruning.md) | 实施计划 |
+| [docs/competition-rules.md](docs/competition-rules.md) | 比赛规则 |
+| [docs/competition-faq.md](docs/competition-faq.md) | 比赛 FAQ |
