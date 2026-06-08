@@ -12,6 +12,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from torch.amp import autocast
+import os
 import numpy as np
 from tqdm import tqdm
 from sklearn.metrics import f1_score
@@ -205,6 +206,9 @@ class DistillationTrainer:
         """
         完整蒸馏训练循环
 
+        每个 epoch 保存 per-epoch checkpoint（保留最近 20 个），每轮刷新 TensorBoard。
+        监控 overfit gap（train_f1 - val_f1），超过 0.05 会警告。
+
         Args:
             train_loader: DataLoader
             val_loader: DataLoader
@@ -212,6 +216,9 @@ class DistillationTrainer:
         Returns:
             nn.Module: 蒸馏完成的学生模型（已加载最佳权重）
         """
+        ckpt_dir = self.cfg.get("distill_ckpt_dir", "results/checkpoints/distill")
+        os.makedirs(ckpt_dir, exist_ok=True)
+
         # 优化器（student + projection layers）
         student_params = list(self.student.parameters()) + list(self.proj_layers.parameters())
         optimizer = optim.AdamW(student_params, lr=self.cfg["kd_lr"], weight_decay=1e-4)
@@ -230,15 +237,26 @@ class DistillationTrainer:
 
         best_f1 = 0.0
         for epoch in range(self.cfg["kd_epochs"]):
+            global_epoch = epoch + 1
+
             # --- Train ---
             self.student.train()
             self.proj_layers.train()
             total_loss_avg = 0.0
+            train_preds, train_labels_list = [], []
 
-            pbar = tqdm(train_loader, desc=f"KD Epoch {epoch+1}/{self.cfg['kd_epochs']}")
+            pbar = tqdm(train_loader, desc=f"KD Epoch {global_epoch}/{self.cfg['kd_epochs']}")
             for images, labels in pbar:
                 total, kd, feat = self.train_step(images, labels, optimizer)
                 total_loss_avg += total
+
+                # 收集训练预测（用于 train F1）
+                with torch.no_grad():
+                    images = images.to(self.device)
+                    logits = self.student(images)
+                    train_preds.extend(logits.argmax(dim=1).cpu().numpy())
+                    train_labels_list.extend(labels.cpu().numpy())
+
                 pbar.set_postfix({
                     "total": f"{total:.4f}",
                     "kd": f"{kd:.4f}",
@@ -247,17 +265,28 @@ class DistillationTrainer:
 
             scheduler.step()
 
+            # Train F1
+            train_f1 = f1_score(train_labels_list, train_preds, average='macro')
+
             # --- Validate ---
             val_f1, val_acc, per_class_f1 = self.evaluate(val_loader)
             avg_loss = total_loss_avg / len(train_loader)
-            print(f"KD Epoch {epoch+1}: Val F1={val_f1:.4f} | Val Acc={val_acc:.2f}%")
+
+            # Overfit gap
+            gap = train_f1 - val_f1
+            gap_str = f"| Gap={gap:+.4f}"
+            if gap > 0.05:
+                gap_str += " ⚠️ OVERFIT"
+
+            print(f"KD Epoch {global_epoch}: Train Loss={avg_loss:.4f} "
+                  f"| Train F1={train_f1:.4f} | Val F1={val_f1:.4f} {gap_str} | Val Acc={val_acc:.2f}%")
 
             # TensorBoard 记录（F1 为主监控，含 per-class）
-            logger.log_metrics("train", {"loss": avg_loss}, epoch + 1)
-            val_metrics = {"F1_Macro": val_f1, "Acc": val_acc}
+            logger.log_metrics("train", {"loss": avg_loss, "F1_Macro": train_f1}, global_epoch)
+            val_metrics = {"F1_Macro": val_f1, "Acc": val_acc, "Overfit_Gap": gap}
             for cls_name, cls_f1 in per_class_f1.items():
                 val_metrics[f"F1_{cls_name}"] = cls_f1
-            logger.log_metrics("val", val_metrics, epoch + 1)
+            logger.log_metrics("val", val_metrics, global_epoch)
             logger.flush()  # 每轮强制写入磁盘
 
             # 保存最佳
@@ -265,6 +294,13 @@ class DistillationTrainer:
                 best_f1 = val_f1
                 torch.save(self.student.state_dict(), self.cfg["distilled_ckpt"])
                 print(f"  ✓ Best distilled student saved! F1={best_f1:.4f}")
+
+            # 每 epoch 周期备份（保留最近 20 个）
+            ckpt_path = os.path.join(ckpt_dir, f"distill_epoch_{global_epoch:02d}.pth")
+            torch.save(self.student.state_dict(), ckpt_path)
+            old = os.path.join(ckpt_dir, f"distill_epoch_{global_epoch-20:02d}.pth")
+            if os.path.exists(old):
+                os.remove(old)
 
         logger.close()
 
