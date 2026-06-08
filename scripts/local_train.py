@@ -4,14 +4,14 @@
 本地开发脚本 — 分阶段运行训练管线
 
 用法:
-    python scripts/local_train.py all         # 运行全部阶段
+    python scripts/local_train.py all         # 运行全部阶段（不含剪枝）
     python scripts/local_train.py teacher     # 仅训练教师
     python scripts/local_train.py distill     # 仅知识蒸馏
-    python scripts/local_train.py prune       # 仅剪枝 + 微调
     python scripts/local_train.py export      # 仅 ONNX 导出 + 量化 + 测速
     python scripts/local_train.py check       # 仅检查环境
+    python scripts/local_train.py prune       # (可选) 仅剪枝 + 微调
 
-对应 main.ipynb 中的 Cell 2-6（Stage 1-6）。
+对应 main.ipynb 中的 Cell 1-6（Stage 1-5，剪枝可选不包含在 all 中）。
 """
 import sys
 import time
@@ -22,9 +22,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 def stage_check():
-    """Stage 1/6: 检查环境和配置"""
+    """Stage 1/5: 检查环境和配置"""
     print("=" * 50)
-    print("Stage 1/6: 环境检查")
+    print("Stage 1/5: 环境检查")
     print("=" * 50)
 
     from config import CONFIG
@@ -44,9 +44,9 @@ def stage_check():
 
 
 def stage_data():
-    """Stage 2/6: 数据准备"""
+    """Stage 2/5: 数据准备"""
     print("=" * 50)
-    print("Stage 2/6: 数据准备")
+    print("Stage 2/5: 数据准备")
     print("=" * 50)
 
     from data.dataset import create_dataloaders
@@ -61,9 +61,9 @@ def stage_data():
 
 
 def stage_teacher():
-    """Stage 3/6: 训练教师模型"""
+    """Stage 3/5: 训练教师模型"""
     print("=" * 50)
-    print("Stage 3/6: 训练教师模型 (EfficientNet-B4)")
+    print("Stage 3/5: 训练教师模型 (EfficientNet-B4)")
     print("=" * 50)
 
     from training.train_teacher import train_teacher
@@ -75,9 +75,9 @@ def stage_teacher():
 
 
 def stage_distill():
-    """Stage 4/6: 知识蒸馏"""
+    """Stage 4/5: 知识蒸馏"""
     print("=" * 50)
-    print("Stage 4/6: 知识蒸馏 (B4 → B0)")
+    print("Stage 4/5: 知识蒸馏 (B4 → B0)")
     print("=" * 50)
 
     from training.distill_student import run_distillation
@@ -89,9 +89,9 @@ def stage_distill():
 
 
 def stage_prune():
-    """Stage 5/6: 结构化剪枝 + 微调"""
+    """(可选) 结构化剪枝 + 微调，不包含在 all 流水线中"""
     print("=" * 50)
-    print("Stage 5/6: 结构化剪枝 + 微调")
+    print("(可选) 结构化剪枝 + 微调")
     print("=" * 50)
 
     from training.prune_finetune import prune_and_finetune
@@ -103,15 +103,15 @@ def stage_prune():
 
 
 def stage_export():
-    """Stage 6/6: ONNX 导出 + INT8 量化 + CPU 测速"""
+    """Stage 5/5: ONNX 导出 + INT8 量化 + CPU 测速"""
     print("=" * 50)
-    print("Stage 6/6: ONNX 导出 + INT8 量化 + CPU 测速")
+    print("Stage 5/5: ONNX 导出 + INT8 量化 + CPU 测速")
     print("=" * 50)
 
     from inference.export_onnx import export_to_onnx, quantize_to_int8, benchmark_cpu
     from config import CONFIG
 
-    onnx_path = export_to_onnx(CONFIG["pruned_ckpt"])
+    onnx_path = export_to_onnx(CONFIG["distilled_ckpt"])  # 使用蒸馏模型，剪枝可选
     int8_path = quantize_to_int8(onnx_path)
     results = benchmark_cpu(onnx_path, int8_path)
 
@@ -128,15 +128,16 @@ STAGES = {
     "export":  stage_export,
 }
 
-ORDER = ["check", "data", "teacher", "distill", "prune", "export"]
+ORDER = ["check", "data", "teacher", "distill", "export"]  # prune 可选，不包含在 all 中
 
 
 def run_from(stage_name: str):
-    """从指定 stage 开始运行到结束（如 teacher → distill → prune → export）"""
+    """从指定 stage 开始运行到结束（如 distill → export）"""
     start_idx = ORDER.index(stage_name)
     for name in ORDER[start_idx:]:
-        fn = STAGES[name]
-        fn()
+        fn = STAGES.get(name)
+        if fn:
+            fn()
 
 
 def main():
