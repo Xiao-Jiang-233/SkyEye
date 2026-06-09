@@ -486,7 +486,7 @@ def train_teacher_phase2(teacher=None):
         base_criterion, penalty_matrix,
         penalty_weight=cfg.get("confusion_penalty_weight", 0),
         class_names=class_names,
-    )
+    ).to(device)
 
     # 优化器（半量 LR，无 warmup）
     phase2_lr = cfg["teacher_lr"] * 0.5
