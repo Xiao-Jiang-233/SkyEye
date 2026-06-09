@@ -118,7 +118,7 @@ CONFIG = {
 
     # ---- 路径 ----
     "teacher_ckpt_dir": "results/checkpoints/teacher",
-    "teacher_ckpt": "results/checkpoints/teacher/teacher_best.pth",
+    "teacher_ckpt": "results/teacher_best.pth",
     "distill_ckpt_dir": "results/checkpoints/distill",
     "distilled_ckpt": "results/student_distilled_best.pth",
     "pruned_ckpt": "results/student_pruned_final.pth",
