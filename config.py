@@ -74,8 +74,8 @@ CONFIG = {
     "teacher_model": "efficientnet_b4",  # timm 模型名
     "teacher_pretrained": True,
     "teacher_epochs": 15,            # 全流程总轮数（P1: 9 + P2: 6）
-    "teacher_phase1_epochs": 9,     # Phase 1: Fast+MU（标准采样，~60% Fast 阶段）
-    "teacher_phase2_epochs": 6,     # Phase 2: Fast+OS+MU（DRW 过采样，~40% Fast 阶段）
+    "teacher_phase1_epochs": 9,     # Phase 1: 标准采样 + MixUp
+    "teacher_phase2_epochs": 6,     # Phase 2: DRW 过采样 + MixUp
     "teacher_lr": 5e-5,  # 380 原生分辨率下微调，保守 LR 保护预训练特征
     "teacher_weight_decay": 1e-4,
     "warmup_epochs": 2,             # 学习率 warmup 轮数（LinearLR 0.1→1.0）

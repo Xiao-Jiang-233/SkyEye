@@ -227,11 +227,11 @@ def _create_model(cfg, device, checkpoint_path=None):
 
 
 # ============================================================
-# Phase 1: Fast+MU（标准采样，MixUp α=0.2，warmup）
+# Phase 1: 标准采样 + MixUp + warmup
 # ============================================================
 def train_teacher_phase1(teacher=None):
     """
-    Phase 1: Fast+MU — 标准采样 + MixUp α=0.2 + warmup
+    Phase 1: 标准采样 + MixUp α=0.2 + warmup
 
     Args:
         teacher: 可选，已创建的模型（链式调用时传入，None 则自动创建）
@@ -246,7 +246,7 @@ def train_teacher_phase1(teacher=None):
 
     print(f"Using device: {device}")
     print(f"\n{'='*60}")
-    print(f"  Phase 1: Fast+MU — {epochs} epochs, standard sampling")
+    print(f"  Phase 1: Standard + MixUp — {epochs} epochs")
     print(f"{'='*60}")
 
     # 数据加载（标准采样）
@@ -291,7 +291,7 @@ def train_teacher_phase1(teacher=None):
 
     for epoch in range(start_epoch, start_epoch + epochs):
         global_epoch = epoch  # Phase 1 从 0 开始
-        mode_tag = "Fast+MU"
+        mode_tag = "P1"
 
         teacher.train()
         train_loss = 0.0
@@ -363,11 +363,11 @@ def train_teacher_phase1(teacher=None):
 
 
 # ============================================================
-# Phase 2: Fast+OS+MU（DRW 过采样，MixUp α=0.2）
+# Phase 2: DRW 过采样 + MixUp
 # ============================================================
 def train_teacher_phase2(teacher=None):
     """
-    Phase 2: Fast+OS+MU — DRW 过采样 + MixUp α=0.2
+    Phase 2: DRW 过采样 + MixUp α=0.2
 
     自动从 phase1 best 加载权重（如 teacher=None）。
     重新初始化优化器（低 LR）和 EMA。
@@ -385,7 +385,7 @@ def train_teacher_phase2(teacher=None):
 
     print(f"Using device: {device}")
     print(f"\n{'='*60}")
-    print(f"  Phase 2: Fast+OS+MU — {epochs} epochs, DRW oversampling")
+    print(f"  Phase 2: DRW Oversampling + MixUp — {epochs} epochs")
     print(f"{'='*60}")
 
     # 数据加载（standard 用于 class info，oversample 用于训练）
@@ -428,7 +428,7 @@ def train_teacher_phase2(teacher=None):
 
     for epoch in range(start_epoch, start_epoch + epochs):
         global_epoch = epoch  # 12, 13, 14
-        mode_tag = "Fast+OS+MU"
+        mode_tag = "P2"
 
         teacher.train()
         train_loss = 0.0
