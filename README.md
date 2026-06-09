@@ -61,7 +61,7 @@ SkyEye/
 │   ├── weather_efficientnet.py    # EfficientNet 封装 + 中间层 hook
 │   └── distill_wrapper.py         # 软标签 + 特征蒸馏训练器
 ├── training/
-│   ├── train_teacher.py           # 教师训练 (FocalLoss + 混合精度)
+│   ├── train_teacher.py           # 教师训练 (FocalLoss + MixUp + EMA + DRW + ConfusionPenalty + LogitAdj)
 │   ├── distill_student.py         # 知识蒸馏入口
 │   └── prune_finetune.py          # (可选) 结构化剪枝 + 渐进微调
 ├── inference/
@@ -84,7 +84,7 @@ SkyEye/
 
 | 阶段                      | 内容                                        | 预估耗时   |
 | ------------------------- | ------------------------------------------- | ---------- |
-| 1. Train Teacher          | EfficientNet-B4, 15 epochs, FocalLoss       | ~30 min    |
+| 1. Train Teacher          | EfficientNet-B4, 15 epochs (P1 9 + P2 6)   | ~3h 40min  |
 | 2. Knowledge Distillation | B4 → B0, 15 epochs, T=4, α=0.7              | ~15 min    |
 | 3. Structured Pruning     | 渐进 2 轮 (20%→40%) + Fine-tune 5 epoch × 2 | ~5 min     |
 | 4. ONNX Export + INT8     | FP32 → ONNX → INT8 动态量化                 | ~3 min     |

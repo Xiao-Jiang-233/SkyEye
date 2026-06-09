@@ -52,7 +52,7 @@
 | foggy | ✓ | 10,000 | 雾霾 |
 | rainy | ✓ | 10,000 | 雨天 |
 | snowy | ✓ | 10,000 | 雪天 — F1 > 0.95 |
-| sunny | ✓ | 10,000 | 晴天 — 1510 张误判为 cloudy |
+| sunny | ✓ | 10,000 | 晴天 — 1478 张误判为 cloudy（已从 2004 改善） |
 | thundery | ✓ | 10,000 | 雷暴 — F1 > 0.97 |
 | other | ⏭ skip | ~2,550 | dew/rime/sandstorm → 归入 other |
 
@@ -64,9 +64,9 @@
 
 ```
 EfficientNet-B4 (教师, 380px)
-    │ FocalLoss + DRW + MixUp + SAM + EMA
+    │ FocalLoss + MixUp + EMA + DRW + ConfusionPenalty + LogitAdj
     ▼
-teacher_best.pth (当前: Macro F1 0.8933)
+teacher_best.pth (当前: Macro F1 0.8941)
     │ 知识蒸馏 (KL + Feature MSE, T=4, α=0.7)
     ▼
 EfficientNet-B0 (学生, 蒸馏后)
@@ -105,13 +105,23 @@ weather_model_int8.onnx → CPU 推理
 
 ### 5.1 教师训练（EfficientNet-B4, 380px）
 
-训练不限时，当前 20 epoch 方案可用。如有余力可适当增加 epoch（SAM 阶段收益边际递减，不建议超过 25 epoch）。
+训练不限时，当前 15 epoch 方案（P1: 9 + P2: 6）。SAM 已移除（实验证明导致 F1 从 0.8931 跌至 0.8744）。
 
 | 阶段 | Epochs | 策略 |
 |------|--------|------|
-| Phase 1: Fast+MU | 1-12 | 标准采样 + MixUp α=0.2 |
-| Phase 2: Fast+OS+MU | 13-15 | DRW cloudy 2× 过采样 + MixUp α=0.2 |
-| Phase 3: SAM+OS | 16-20 | SAM ρ=0.05 + DRW + **关闭 MixUp** |
+| Phase 1 | 1-9 | 标准采样 + MixUp α=0.2 + Per-Class Label Smoothing |
+| Phase 2 | 10-15 | DRW cloudy 2× + sunny 2× + ConfusionPenaltyLoss + Per-Class Smoothing |
+
+**sunny→cloudy 混淆四方案**：
+
+| 方案 | 实现 | 生效位置 |
+|------|------|----------|
+| A: Logit Adjustment | `logit_bias: {sunny: -0.5, cloudy: 0.3}` | evaluate() + eval_full |
+| B: Cost-Sensitive Loss | ConfusionPenaltyLoss 包装 FocalLoss，惩罚 sunny→cloudy | Phase 2 |
+| C: Sunny Oversampling | Phase 2 对 sunny 也做 2× 过采样 | Phase 2 数据加载 |
+| D: Per-Class Smoothing | sunny/cloudy 用 ε=0.1，其他类为 0 | Phase 1+2 FocalLoss |
+
+效果：sunny→cloudy 混淆从 2004 降至 1478（-26%），sunny recall 0.78→0.84，Macro F1 0.8931→0.8941。
 
 ### 5.2 知识蒸馏（B4 → B0）
 
@@ -148,7 +158,10 @@ PyTorch B0 (.pth)
 | `num_classes` | 6 | cloudy/foggy/rainy/snowy/sunny/thundery |
 | `teacher_lr` | 5e-5 | 保守 LR |
 | `focal_gamma` | 1.0 | cloudy 梯度 |
-| `mixup_alpha` | 0.2 | SAM 阶段关闭 |
+| `mixup_alpha` | 0.2 | Phase 1+2 全程开启 |
+| `per_class_label_smoothing` | sunny/cloudy=0.1 | 方案 D：易混淆类更高平滑 |
+| `logit_bias` | sunny=-0.5, cloudy=+0.3 | 方案 A：推理时调整判定门槛 |
+| `confusion_penalty_weight` | 0.3 | 方案 B：sunny→cloudy 额外惩罚 |
 | `sam_rho` | 0.05 | 后 5 epoch |
 | `ema_decay` | 0.99997 | ~33k steps |
 | `kd_temperature` | 4.0 | |
@@ -161,7 +174,7 @@ PyTorch B0 (.pth)
 
 | 阶段 | 模型 | Macro F1（预期） | Macro F1（实际） | 备注 |
 |------|------|:---:|:---:|------|
-| Teacher | EfficientNet-B4 | ~0.88 | **0.8933** | 已完成 |
+| Teacher | EfficientNet-B4 | ~0.88 | **0.8941** | 已完成 |
 | KD 蒸馏 | B0 distilled | ~0.85 | — | 待训练 |
 | +INT8 量化 | ONNX INT8 | ~0.85 | — | 精度基本无损 |
 | +轻量剪枝(可选) | B0 pruned 25% | ~0.84 | — | 仅速度需要时启用 |
@@ -182,7 +195,7 @@ SkyEye/
 │   ├── weather_efficientnet.py     # EfficientNet 封装
 │   └── distill_wrapper.py          # 蒸馏训练器
 ├── training/
-│   ├── train_teacher.py            # 教师训练（FocalLoss+DRW+SAM+EMA）
+│   ├── train_teacher.py            # 教师训练（FocalLoss+MixUp+EMA+DRW+ConfusionPenalty+LogitAdj）
 │   ├── distill_student.py          # 知识蒸馏
 │   └── prune_finetune.py           # 剪枝 + 微调（可选）
 ├── inference/

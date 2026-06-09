@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 dew/rime/sandstorm 通过 `class_aliases` 映射到 `other`，暂不参与训练（补充数据集仅 ~700~1200 张，样本量不足）。
 技术方案：EfficientNet-B4（教师）→ 知识蒸馏 → EfficientNet-B0（学生）→ ONNX 导出 → INT8 量化。（结构化剪枝可选，仅速度需要时启用）
 比赛约束：GPU 训练 → CPU 推理，推理总时限 70 分钟（训练本地不限时）。评分 Macro F1 × 100，同分按推理速度排名。规则详见 [docs/competition-rules.md](docs/competition-rules.md) 和 [docs/competition-faq.md](docs/competition-faq.md)。
-当前教师最优：**Macro F1 0.8933 / Acc 89.16%**（全量 60k 评估），瓶颈在 cloudy↔sunny 混淆。
+当前教师最优：**Macro F1 0.8941 / Acc 89.04%**（全量 60k 评估），瓶颈在 cloudy↔sunny 混淆（已通过四方案改善 sunny recall 0.78→0.84）。
 设计文档：[docs/design-efficientnet-kd-pruning.md](docs/design-efficientnet-kd-pruning.md)
 
 ## 开发环境
@@ -158,20 +158,25 @@ tensorboard --logdir results/tb_results/
 
 ### 教师模型优化组合
 
+训练分 2 阶段，共 15 epoch（P1: 9 + P2: 6），无 SAM。
+
 | 策略 | 参数 | 说明 |
 |---|---|---|
-| DRW 延迟过采样 | 前 60% epoch 标准 → 后 40% cloudy 2× | LDAM (NeurIPS 2019)，先学特征再校准边界 |
 | FocalLoss | γ=1.0 | 处理类别不平衡，让困难样本拿到梯度 |
-| MixUp | α=0.2（Fast 阶段） | Zhang et al. (ICLR 2018)，输入空间正则化 |
-| SAM | rho=0.05（后 5 epoch） | 平坦极小值探素，**SAM 阶段自动关闭 MixUp** 避免正则化叠加 |
+| MixUp | α=0.2 | Zhang et al. (ICLR 2018)，输入空间正则化 |
 | EMA | decay=0.99997 | 权重指数滑动平均，平滑窗口 ~33k steps |
 | BF16 AMP | autocast + clip_grad | RTX 5070 原生支持，无需 GradScaler |
+| DRW 延迟过采样 | P2 阶段 cloudy 2× + sunny 2× | LDAM (NeurIPS 2019)，先学特征再校准边界 |
+| Per-Class Label Smoothing | sunny/cloudy ε=0.1，其他 0 | 对易混淆类用更高平滑值（方案 D） |
+| ConfusionPenaltyLoss | sunny→cloudy λ=0.3 | 对特定混淆方向施加额外惩罚（方案 B） |
+| Logit Adjustment | sunny bias=-0.5, cloudy=+0.3 | 推理时调整判定门槛（方案 A） |
 
 ### 已知经验
 
-- **SAM + MixUp 叠加会导致过度正则化**：SAM 阶段同时使用 MixUp 时 Val F1 反而下降，改为 SAM 阶段关闭 MixUp 后缓解
-- **cloudy↔sunny 是最大混淆对**：混淆矩阵中 sunny→cloudy 1510 张（17.4%），cloudy 的 Precision 仅 0.71
-- **thundery/snowy 几乎完美**：F1 > 0.95，特征鲜明
+- **SAM 对该任务无效**：SAM rho=0.05 导致 Macro F1 从 0.8931 跌到 0.8744，sunny recall 和 cloudy precision 双降，训练时间翻倍。已移除
+- **cloudy↔sunny 是最大混淆对**：sunny→cloudy 从 2004（20%）降至 1478（14.8%）通过四方案改善，但 cloudy→rainy 成为新的混淆热点（1700，17%）
+- **thundery/snowy 几乎完美**：F1 > 0.96，特征鲜明
+- **MixUp 阶段 Train F1 < Val F1 是正常现象**：因为 Train F1 在混合样本上计算但只与 labels_a 比较，不是 bug
 
 ## 注意事项
 
@@ -187,6 +192,8 @@ tensorboard --logdir results/tb_results/
 - **Windows**：全量评估时设置 `num_workers=0`，避免 60k 图 DataLoader 共享内存耗尽
 - BF16 autocast 用于训练（RTX 5070 原生支持，无需 GradScaler）
 - TensorBoard 仅使用 SCALARS 标签页（loss/F1/Acc/per-class F1），无 GRAPHS/PROFILE/HISTOGRAMS
+- 四方案配置均在 `config.py` 中：`logit_bias`（推理门槛）、`confusion_penalty_weight`（混淆惩罚）、`per_class_label_smoothing`（按类平滑）
+- 教师模型最终保存到 `results/teacher_best.pth`（Phase 依赖文件在 `results/checkpoints/teacher/`）
 
 ## 核心依赖
 
