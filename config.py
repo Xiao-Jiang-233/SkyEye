@@ -73,15 +73,12 @@ CONFIG = {
     # ---- 教师模型 ----
     "teacher_model": "efficientnet_b4",  # timm 模型名
     "teacher_pretrained": True,
-    "teacher_epochs": 20,            # 全流程总轮数
+    "teacher_epochs": 15,            # 全流程总轮数（P1: 9 + P2: 6）
     "teacher_phase1_epochs": 9,     # Phase 1: Fast+MU（标准采样，~60% Fast 阶段）
     "teacher_phase2_epochs": 6,     # Phase 2: Fast+OS+MU（DRW 过采样，~40% Fast 阶段）
-    "teacher_phase3_epochs": 5,     # Phase 3: SAM+OS（SAM 优化器收尾，关闭 MixUp）
     "teacher_lr": 5e-5,  # 380 原生分辨率下微调，保守 LR 保护预训练特征
     "teacher_weight_decay": 1e-4,
     "warmup_epochs": 2,             # 学习率 warmup 轮数（LinearLR 0.1→1.0）
-    "sam_epochs": 5,                # SAM 最后 5 轮收尾
-    "sam_mixup_alpha": 0.0,         # SAM 阶段关闭 MixUp（避免正则化叠加导致过正则化）
 
     # ---- 知识蒸馏 ----
     "student_model": "efficientnet_b0",  # timm 模型名
@@ -109,7 +106,6 @@ CONFIG = {
     "use_focal_loss": True,       # 处理类别不平衡
     "focal_gamma": 1.0,            # 降为 1，让困难样本（cloudy）拿到梯度
     "mixup_alpha": 0.2,            # MixUp 混合强度 (Zhang et al., ICLR 2018)；0.0=关闭
-    "sam_rho": 0.05,               # SAM 优化器扰动半径（平坦极小值 → 泛化好）
     "ema_decay": 0.99997,          # EMA 衰减，平滑窗口 ~33k steps ≈ 7 epochs
 
     # ---- 推理 ----
