@@ -103,10 +103,26 @@ CONFIG = {
     "scheduler": "cosine",        # cosine / plateau
     "label_smoothing": 0.0,  # 关闭：FocalLoss 自带 max-entropy 正则化 (NeurIPS 2020)
     # 且 LS 与 FL 梯度机制冲突 (NeurIPS 2021) + LS 教师损害 KD 软标签 (Müller, NeurIPS 2019)
+    # Per-class label smoothing（方案 D）：对易混淆类用更高平滑值
+    "per_class_label_smoothing": {
+        "sunny": 0.1, "cloudy": 0.1,
+    },
     "use_focal_loss": True,       # 处理类别不平衡
     "focal_gamma": 1.0,            # 降为 1，让困难样本（cloudy）拿到梯度
     "mixup_alpha": 0.2,            # MixUp 混合强度 (Zhang et al., ICLR 2018)；0.0=关闭
     "ema_decay": 0.99997,          # EMA 衰减，平滑窗口 ~33k steps ≈ 7 epochs
+
+    # ---- Logit Adjustment（方案 A）----
+    # 推理时 logit bias：降低 sunny 门槛，提高 cloudy 门槛
+    # bias > 0 → 更难被判为该类；bias < 0 → 更容易被判为该类
+    "logit_bias": {
+        "sunny": -0.5,
+        "cloudy": 0.3,
+    },
+
+    # ---- Cost-Sensitive Loss（方案 B）----
+    # 对特定混淆方向施加额外惩罚
+    "confusion_penalty_weight": 0.3,  # sunny→cloudy 额外惩罚强度
 
     # ---- 推理 ----
     "inference_device": "cpu",           # 比赛评测用 CPU 推理

@@ -67,12 +67,22 @@ def main():
     class_names = full_dataset.classes
     print(f"Dataset: {len(full_dataset)} images, {len(class_names)} classes: {class_names}")
 
-    # 推理
+    # 推理（方案 A：logit adjustment）
     all_preds, all_labels = [], []
+    bias_cfg = cfg.get("logit_bias", {})
+    logit_bias = torch.zeros(cfg["num_classes"], device=device)
+    if bias_cfg:
+        for cls_name, val in bias_cfg.items():
+            if cls_name in class_names:
+                logit_bias[class_names.index(cls_name)] = val
+        print(f"Logit bias: {bias_cfg}")
+
     with torch.no_grad():
         for images, labels in tqdm(loader, desc="Evaluating"):
             images = images.to(device)
             logits = model(images)
+            if bias_cfg:
+                logits = logits + logit_bias.unsqueeze(0)
             preds = logits.argmax(dim=1).cpu().numpy()
             all_preds.extend(preds)
             all_labels.extend(labels.numpy())

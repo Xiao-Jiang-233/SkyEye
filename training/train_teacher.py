@@ -65,29 +65,46 @@ class FocalLoss(nn.Module):
 
     FL = -(1 - pt)^γ × CE_smoothed
 
-    其中 CE_smoothed 由 F.cross_entropy(label_smoothing=ε) 提供，
-    pt 仍从模型对真实类的 softmax 概率计算，保持 focal 调制语义。
+    支持 per-class label smoothing（方案 D）：dict 格式按类名分配不同平滑值。
 
     Args:
         alpha: Tensor — 各类别权重
         gamma: float — 聚焦参数（默认 1.0）
-        label_smoothing: float — 标签平滑 ε（默认 0.0 即关闭）
+        label_smoothing: float | dict — 标签平滑 ε。float 全局统一；dict 按类名映射
         reduction: str — 'mean' / 'sum'
+        class_names: list — 类名列表（per-class smoothing 时需要）
     """
 
-    def __init__(self, alpha=None, gamma=1.0, label_smoothing=0.0, reduction='mean'):
+    def __init__(self, alpha=None, gamma=1.0, label_smoothing=0.0, reduction='mean', class_names=None):
         super().__init__()
         self.alpha = alpha
         self.gamma = gamma
-        self.label_smoothing = label_smoothing
         self.reduction = reduction
+        self.class_names = class_names or []
+
+        if isinstance(label_smoothing, dict):
+            self.per_class_ls = torch.zeros(len(class_names) if class_names else 6)
+            for cls_name, eps in label_smoothing.items():
+                if cls_name in self.class_names:
+                    self.per_class_ls[self.class_names.index(cls_name)] = eps
+            self.label_smoothing = 0.0
+        else:
+            self.per_class_ls = None
+            self.label_smoothing = label_smoothing
 
     def forward(self, inputs, targets):
-        # label_smoothing 直接交给 cross_entropy 处理
-        ce_loss = nn.functional.cross_entropy(
-            inputs, targets, reduction='none', label_smoothing=self.label_smoothing,
-        )
-        # pt: 模型对真实类的预测概率（保持 focal 调制语义）
+        if self.per_class_ls is not None and self.class_names:
+            smoothing_vals = self.per_class_ls.to(inputs.device)[targets]
+            n_classes = inputs.size(1)
+            log_probs = torch.log_softmax(inputs, dim=1)
+            ce_onehot = -log_probs.gather(1, targets.unsqueeze(1)).squeeze(1)
+            ce_uniform = -log_probs.mean(dim=1)
+            ce_loss = (1 - smoothing_vals) * ce_onehot + smoothing_vals * ce_uniform
+        else:
+            ce_loss = nn.functional.cross_entropy(
+                inputs, targets, reduction='none', label_smoothing=self.label_smoothing,
+            )
+
         probs = torch.softmax(inputs, dim=1)
         pt = probs.gather(1, targets.unsqueeze(1)).squeeze(1).clamp(min=1e-7)
         focal_loss = (1 - pt) ** self.gamma * ce_loss
@@ -100,6 +117,39 @@ class FocalLoss(nn.Module):
         if self.reduction == 'mean':
             return focal_loss.mean()
         return focal_loss.sum()
+
+
+# ============================================================
+# ConfusionPenaltyLoss（方案 B）— 对特定混淆方向施加额外惩罚
+# ============================================================
+class ConfusionPenaltyLoss(nn.Module):
+    """
+    包装现有 loss，叠加混淆矩阵惩罚项
+
+    L = base_loss + λ × Σ p(y'≠y) × M[y][y']
+
+    Args:
+        base_criterion: nn.Module — 基础损失函数
+        penalty_matrix: Tensor (C, C) — 混淆惩罚权重矩阵
+        penalty_weight: float — 惩罚项强度 λ
+        class_names: list
+    """
+
+    def __init__(self, base_criterion, penalty_matrix, penalty_weight=0.3, class_names=None):
+        super().__init__()
+        self.base_criterion = base_criterion
+        self.penalty_weight = penalty_weight
+        self.class_names = class_names or []
+        self.register_buffer('penalty_matrix', penalty_matrix)
+
+    def forward(self, inputs, targets):
+        base_loss = self.base_criterion(inputs, targets)
+
+        if self.penalty_weight > 0 and self.penalty_matrix is not None:
+            probs = torch.softmax(inputs, dim=1)
+            penalty = (probs * self.penalty_matrix[targets]).sum(dim=1)
+            return base_loss + self.penalty_weight * penalty.mean()
+        return base_loss
 
 
 # ============================================================
@@ -156,19 +206,35 @@ class EMA:
 # ============================================================
 # Evaluate
 # ============================================================
+def _build_logit_bias(device, class_names, cfg=None):
+    """从 config 构建 per-class logit bias 张量（方案 A）"""
+    bias = torch.zeros(len(class_names), device=device)
+    bias_cfg = (cfg or CONFIG).get("logit_bias", {})
+    if bias_cfg:
+        for cls_name, val in bias_cfg.items():
+            if cls_name in class_names:
+                bias[class_names.index(cls_name)] = val
+    return bias
+
+
 @torch.no_grad()
 def evaluate(model, loader, device, class_names=None):
     """
     在验证集上评估模型
+
+    支持 logit adjustment（方案 A）：推理时对 logit 做先验偏移
 
     Returns:
         tuple: (macro_f1, accuracy, per_class_f1_dict | None)
     """
     model.eval()
     all_preds, all_labels = [], []
+    logit_bias = _build_logit_bias(device, class_names) if class_names else None
     for images, labels in loader:
         images = images.to(device)
         logits = model(images)
+        if logit_bias is not None:
+            logits = logits + logit_bias.unsqueeze(0)
         preds = logits.argmax(dim=1).cpu().numpy()
         all_preds.extend(preds)
         all_labels.extend(labels.numpy())
@@ -256,11 +322,12 @@ def train_teacher_phase1(teacher=None):
     if teacher is None:
         teacher = _create_model(cfg, device, None)
 
-    # 损失函数
+    # 损失函数（方案 D: per-class label smoothing）
     alpha = compute_class_weights(class_counts)
+    smoothing = cfg.get("per_class_label_smoothing", {}) or cfg.get("label_smoothing", 0.0)
     criterion = FocalLoss(
         alpha=alpha, gamma=cfg["focal_gamma"],
-        label_smoothing=cfg.get("label_smoothing", 0.0),
+        label_smoothing=smoothing, class_names=class_names,
     )
 
     # 优化器 + warmup + cosine 调度
@@ -388,19 +455,37 @@ def train_teacher_phase2(teacher=None):
     print(f"  Phase 2: DRW Oversampling + MixUp — {epochs} epochs")
     print(f"{'='*60}")
 
-    # 数据加载（standard 用于 class info，oversample 用于训练）
+    # 数据加载（方案 C：cloudy + sunny 双过采样）
     _, val_loader, class_counts, class_names = create_dataloaders(cloudy_oversample=False)
-    train_loader, _, _, _ = create_dataloaders(cloudy_oversample=True)
+    train_loader, _, _, _ = create_dataloaders(cloudy_oversample=True, sunny_oversample=True)
 
     # 模型：从 phase1 best 加载
     if teacher is None:
         teacher = _create_model(cfg, device, phase1_best)
 
-    # 损失函数
+    # 损失函数（方案 B: ConfusionPenalty + 方案 D: per-class smoothing）
     alpha = compute_class_weights(class_counts)
-    criterion = FocalLoss(
+    smoothing = cfg.get("per_class_label_smoothing", {}) or cfg.get("label_smoothing", 0.0)
+    base_criterion = FocalLoss(
         alpha=alpha, gamma=cfg["focal_gamma"],
-        label_smoothing=cfg.get("label_smoothing", 0.0),
+        label_smoothing=smoothing, class_names=class_names,
+    )
+
+    # 构造混淆惩罚矩阵（仅 sunny→cloudy）
+    num_c = len(class_names)
+    penalty_matrix = torch.zeros(num_c, num_c)
+    if cfg.get("confusion_penalty_weight", 0) > 0:
+        sunny_idx = class_names.index("sunny") if "sunny" in class_names else None
+        cloudy_idx = class_names.index("cloudy") if "cloudy" in class_names else None
+        if sunny_idx is not None and cloudy_idx is not None:
+            penalty_matrix[sunny_idx, cloudy_idx] = 1.0
+            print(f"Confusion penalty: sunny({sunny_idx})→cloudy({cloudy_idx}) = 1.0, "
+                  f"λ={cfg['confusion_penalty_weight']}")
+
+    criterion = ConfusionPenaltyLoss(
+        base_criterion, penalty_matrix,
+        penalty_weight=cfg.get("confusion_penalty_weight", 0),
+        class_names=class_names,
     )
 
     # 优化器（半量 LR，无 warmup）

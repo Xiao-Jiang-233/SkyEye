@@ -397,7 +397,8 @@ def prepare_data():
     return dst
 
 
-def create_dataloaders(data_root=None, img_size=None, batch_size=None, num_workers=None, cloudy_oversample=False):
+def create_dataloaders(data_root=None, img_size=None, batch_size=None, num_workers=None,
+                       cloudy_oversample=False, sunny_oversample=False):
     """
     创建训练和验证 DataLoader
 
@@ -445,6 +446,19 @@ def create_dataloaders(data_root=None, img_size=None, batch_size=None, num_worke
         cloudy_label = class_to_idx_map["cloudy"]
         cloudy_count = sum(1 for i in train_idx if full_dataset.targets[i] == cloudy_label)
         print(f"Cloudy oversampling: OFF ({cloudy_count} original samples)")
+
+    # ② Sunny 过采样 2×（方案 C：对抗 sunny→cloudy 非对称偏向）
+    if sunny_oversample and "sunny" in class_to_idx_map:
+        sunny_label = class_to_idx_map["sunny"]
+        sunny_train_idx = [i for i in train_idx if full_dataset.targets[i] == sunny_label]
+        sunny_count = len(sunny_train_idx)
+        train_idx = np.concatenate([train_idx, sunny_train_idx])
+        print(f"Sunny oversampling: {sunny_count} → {sunny_count * 2} "
+              f"({sunny_count} duplicated, 2×)")
+    elif "sunny" in class_to_idx_map:
+        sunny_label = class_to_idx_map["sunny"]
+        sunny_count = sum(1 for i in train_idx if full_dataset.targets[i] == sunny_label)
+        print(f"Sunny oversampling: OFF ({sunny_count} original samples)")
 
     # 分别创建两个 ImageFolder 实例（不同 transform）+ Subset
     train_ds = torch.utils.data.Subset(
