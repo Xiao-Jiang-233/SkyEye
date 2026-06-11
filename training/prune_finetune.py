@@ -135,7 +135,7 @@ def finetune_after_prune(model, train_loader, val_loader, class_counts, class_na
     use_amp = cfg["fp16"] and torch.cuda.is_available()
     amp_dtype = getattr(torch, cfg.get("amp_dtype", "float16")) if use_amp else None
     use_grad_scaler = cfg.get("use_grad_scaler", False) and use_amp
-    scaler = torch.cuda.amp.GradScaler() if use_grad_scaler else None
+    scaler = torch.amp.GradScaler('cuda') if use_grad_scaler else None
 
     for epoch in range(epochs):
         model.train()

@@ -64,7 +64,7 @@ class DistillationTrainer:
         self.use_amp = self.cfg["fp16"] and torch.cuda.is_available()
         self.amp_dtype = getattr(torch, self.cfg.get("amp_dtype", "float16")) if self.use_amp else None
         self.use_grad_scaler = self.cfg.get("use_grad_scaler", False) and self.use_amp
-        self.scaler = torch.cuda.amp.GradScaler() if self.use_grad_scaler else None
+        self.scaler = torch.amp.GradScaler('cuda') if self.use_grad_scaler else None
 
         # 冻结教师
         self.teacher.eval()

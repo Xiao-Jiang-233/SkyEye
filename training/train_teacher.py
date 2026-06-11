@@ -328,7 +328,7 @@ def train_teacher():
     use_amp = cfg["fp16"] and torch.cuda.is_available()
     amp_dtype = getattr(torch, cfg.get("amp_dtype", "float16")) if use_amp else None
     use_grad_scaler = cfg.get("use_grad_scaler", False) and use_amp
-    scaler = torch.cuda.amp.GradScaler() if use_grad_scaler else None
+    scaler = torch.amp.GradScaler('cuda') if use_grad_scaler else None
 
     # ---- Phase 1: 数据 + 模型 + 损失 + 优化器 ----
     train_loader, val_loader, class_counts, class_names = create_dataloaders(cloudy_oversample=False)
