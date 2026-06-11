@@ -194,6 +194,10 @@ tensorboard --logdir results/tb_results/
 - TensorBoard 仅使用 SCALARS 标签页（loss/F1/Acc/per-class F1），无 GRAPHS/PROFILE/HISTOGRAMS
 - 四方案配置均在 `config.py` 中：`logit_bias`（推理门槛）、`confusion_penalty_weight`（混淆惩罚）、`per_class_label_smoothing`（按类平滑）
 - 教师模型最终保存到 `results/teacher_best.pth`（Phase 依赖文件在 `results/checkpoints/teacher/`）
+- **Windows**：PowerShell 命令（`Test-Path`、`Remove-Item` 等）需用 `PowerShell` 工具，不要通过 `Bash` 执行
+- **NotebookEdit**：`git checkout`/`git stash` 后需先重新 `Read` notebook，否则会报 "modified since read" 错误
+- **nn.Module 损失函数**：带 buffer 的损失（如 ConfusionPenaltyLoss）需 `.to(device)`，`register_buffer` 确保 buffer 随 module 移动
+- **分批 commit**：同一文件跨批次改动交织时，`git add -p` 处理不了。正确方式：备份最终状态 → reset → 逐批手动编辑 → 逐批 commit
 
 ## 核心依赖
 
