@@ -18,7 +18,7 @@ dew/rime/sandstorm 通过 `class_aliases` 映射到 `other`，暂不参与训练
 - **GPU**: RTX 5070（Blackwell，CUDA 13.0 / cu130）
 - **运行时环境**: Python 3.13.x | PyTorch 2.12.0+cu130 | CUDA
 - **虚拟环境**: `.venv/`（已在 `.gitignore` 中排除）
-- 开发方式：纯模块化 `.py` 文件，`main.ipynb` 作为 Jupyter 入口，`scripts/local_train.py` 作为 CLI 入口
+- 开发方式：纯模块化 `.py` 文件，`main.ipynb` 作为 Jupyter 入口
 - 模块结构：`config.py`（超参数）→ `data/`（加载+增强）→ `models/`（EfficientNet封装+蒸馏）→ `training/`（教师训练+蒸馏+剪枝微调）→ `inference/`（ONNX导出+INT8量化+CPU推理）→ `utils/`（指标+日志）
 - **Windows 特别说明**：
   - `num_workers` 自动设为 2（`config.py` 检测 `sys.platform`），避免 multiprocessing spawn 卡死
@@ -32,11 +32,7 @@ dew/rime/sandstorm 通过 `class_aliases` 映射到 `other`，暂不参与训练
 | 路径                     | 用途                                                                           |
 | ------------------------ | ------------------------------------------------------------------------------ |
 | `main.ipynb`             | Jupyter Notebook 入口，按阶段调用各 .py 模块                                   |
-| `scripts/local_train.py` | CLI 脚本（分阶段运行训练管线）                                                 |
 | `scripts/eval_full.py`   | 全量 60k 数据集评估脚本                                                        |
-| `scripts/run.sh`         | Linux/macOS/Git Bash 快捷启动脚本                                              |
-| `scripts/run.bat`        | Windows CMD 快捷启动脚本                                                       |
-| `scripts/run.ps1`        | Windows PowerShell 快捷启动脚本                                                |
 | `datasets/`              | 导入的数据集，**只读**，通过 `prepare_data()` 复制到可写目录                   |
 | `results/`               | 训练结果和模型检查点存放处                                                     |
 | `results/checkpoints/`   | 每 epoch 周期备份（保留最近 20 个，自动滚动清理）                               |
@@ -130,19 +126,6 @@ source .venv/Scripts/activate # Git Bash
 
 # 安装依赖
 pip install -r requirements.txt
-
-# 运行训练管线（三选一）
-bash scripts/run.sh check      # Git Bash
-scripts\run.bat check          # CMD
-.\scripts\run.ps1 check        # PowerShell
-
-# 或直接调用 Python
-python scripts/local_train.py check     # 检查环境
-python scripts/local_train.py teacher   # 训练教师
-python scripts/local_train.py distill   # 仅知识蒸馏
-python scripts/local_train.py prune     # 仅剪枝 + 微调
-python scripts/local_train.py export    # 仅 ONNX 导出 + 量化 + 测速
-python scripts/local_train.py all       # 完整管线
 
 # 单张图片推理
 python -m inference.infer <image_path>

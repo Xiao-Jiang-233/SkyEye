@@ -51,7 +51,6 @@ CPU Inference (ONNX Runtime)
 SkyEye/
 ├── main.ipynb                     # Jupyter Notebook 入口，按顺序执行训练管线
 ├── scripts/
-│   ├── local_train.py             # CLI 训练入口（分阶段运行）
 │   └── eval_full.py               # 全量数据集评估
 ├── config.py                      # 超参数统一管理 + HF 镜像配置
 ├── data/
@@ -107,7 +106,7 @@ SCALARS 页可对比各阶段的 loss / F1 / Accuracy / per-class F1 曲线。
 pip install -r requirements.txt
 ```
 
-Jupyter Notebook 中按顺序执行各 Cell，或使用 CLI：`python scripts/local_train.py all`。
+Jupyter Notebook 中按顺序执行各 Cell 即可完成训练管线。
 
 ## 相关文档
 

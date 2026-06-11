@@ -186,7 +186,6 @@ SkyEye/
 ├── main.ipynb                      # Jupyter 入口
 ├── config.py                       # 超参数 + HF 镜像
 ├── scripts/
-│   ├── local_train.py              # CLI 训练入口
 │   └── eval_full.py                # 全量 60k 评估
 ├── data/
 │   ├── dataset.py                  # 多源合并 + DataLoader
