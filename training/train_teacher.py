@@ -471,15 +471,19 @@ def train_teacher_phase2(teacher=None):
         label_smoothing=smoothing, class_names=class_names,
     )
 
-    # 构造混淆惩罚矩阵（仅 sunny→cloudy）
+    # 构造混淆惩罚矩阵（sunny/rainy/foggy → cloudy）
     num_c = len(class_names)
     penalty_matrix = torch.zeros(num_c, num_c)
     if cfg.get("confusion_penalty_weight", 0) > 0:
-        sunny_idx = class_names.index("sunny") if "sunny" in class_names else None
         cloudy_idx = class_names.index("cloudy") if "cloudy" in class_names else None
-        if sunny_idx is not None and cloudy_idx is not None:
-            penalty_matrix[sunny_idx, cloudy_idx] = 1.0
-            print(f"Confusion penalty: sunny({sunny_idx})→cloudy({cloudy_idx}) = 1.0, "
+        if cloudy_idx is not None:
+            penalties = []
+            for src_name in ["sunny", "rainy", "foggy"]:
+                if src_name in class_names:
+                    src_idx = class_names.index(src_name)
+                    penalty_matrix[src_idx, cloudy_idx] = 1.0
+                    penalties.append(f"{src_name}({src_idx})→cloudy({cloudy_idx})")
+            print(f"Confusion penalty: {', '.join(penalties)} = 1.0, "
                   f"λ={cfg['confusion_penalty_weight']}")
 
     criterion = ConfusionPenaltyLoss(

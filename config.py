@@ -121,8 +121,8 @@ CONFIG = {
     },
 
     # ---- Cost-Sensitive Loss（方案 B）----
-    # 对特定混淆方向施加额外惩罚
-    "confusion_penalty_weight": 0.3,  # sunny→cloudy 额外惩罚强度
+    # 对 cloudy 收容的混淆方向施加额外惩罚（sunny/rainy/foggy → cloudy）
+    "confusion_penalty_weight": 0.3,
 
     # ---- 推理 ----
     "inference_device": "cpu",           # 比赛评测用 CPU 推理
