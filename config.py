@@ -12,7 +12,7 @@ os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 # 限制每个 worker 的 OpenMP/MKL 线程数，按 CPU 核心数自适应
 # total = num_workers × OMP_NUM_THREADS，留一半给系统和 GPU 驱动
-_omp_threads = str(min(8, max(2, (os.cpu_count() or 4) // 4)))
+_omp_threads = str(min(4, max(2, (os.cpu_count() or 4) // 8)))
 os.environ.setdefault("OMP_NUM_THREADS", _omp_threads)
 os.environ.setdefault("MKL_NUM_THREADS", _omp_threads)
 
@@ -28,12 +28,12 @@ if torch.cuda.is_available():
 def _auto_num_workers():
     """自适应 DataLoader 线程数。
 
-    Windows spawn 下保守取 2（避免启动开销过大），Linux 取 CPU 核数的一半，上限 4。
+    Windows spawn 下保守取 2，Linux 取 CPU 核数的一半（上限 8）。
     """
     cpu_count = os.cpu_count() or 4
     if sys.platform == "win32":
         return min(2, max(0, cpu_count // 2))
-    return min(4, max(0, cpu_count // 2))
+    return min(8, max(0, cpu_count // 2))
 
 
 def _detect_amp():
@@ -59,12 +59,12 @@ _AMP = _detect_amp()
 
 
 def _auto_batch_size():
-    """自适应 batch_size：≈1GB 显存 → 1 样本（B4@380 训练内存）"""
+    """自适应 batch_size：≤8GB 保守 ≈1GB/样本，>8GB ≈0.5GB/样本"""
     if not torch.cuda.is_available():
         return 4  # CPU fallback
     vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
-    bs = max(4, min(int(vram_gb), 64))
-    return bs
+    ratio = 1.0 if vram_gb <= 10 else 2.0
+    return max(4, min(int(vram_gb * ratio), 96))
 
 
 CONFIG = {
