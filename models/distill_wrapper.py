@@ -60,6 +60,12 @@ class DistillationTrainer:
         self.cfg = cfg or CONFIG
         self.class_names = class_names  # 避免 evaluate 中链式耦合 loader.dataset.dataset.classes
 
+        # 自适应 AMP
+        self.use_amp = self.cfg["fp16"] and torch.cuda.is_available()
+        self.amp_dtype = getattr(torch, self.cfg.get("amp_dtype", "float16")) if self.use_amp else None
+        self.use_grad_scaler = self.cfg.get("use_grad_scaler", False) and self.use_amp
+        self.scaler = torch.cuda.amp.GradScaler() if self.use_grad_scaler else None
+
         # 冻结教师
         self.teacher.eval()
         for p in self.teacher.parameters():
@@ -169,7 +175,7 @@ class DistillationTrainer:
 
     def train_step(self, images, labels, optimizer):
         """
-        单步蒸馏训练（BF16 autocast，无需 GradScaler）
+        单步蒸馏训练（自适应 AMP：bfloat16 或 float16 + GradScaler）
 
         Returns:
             tuple: (total_loss, kd_loss, feat_loss)
@@ -181,7 +187,7 @@ class DistillationTrainer:
             teacher_logits, teacher_feats = self.teacher(images, return_features=True)
 
         # 获取 Student 输出
-        with autocast('cuda', dtype=torch.bfloat16, enabled=self.cfg["fp16"]):
+        with autocast('cuda', dtype=self.amp_dtype, enabled=self.use_amp):
             student_logits, student_feats = self.student(images, return_features=True)
 
             # 按 feature_info 索引选取特征（跳过通道重复的 block）
@@ -195,10 +201,15 @@ class DistillationTrainer:
             feat_loss = self.feature_loss(student_feat_list, teacher_feat_list)
             total_loss = kd_loss + self.cfg["kd_feature_weight"] * feat_loss
 
-        # 反向传播（BF16 不需要 GradScaler）
+        # 反向传播
         optimizer.zero_grad()
-        total_loss.backward()
-        optimizer.step()
+        if self.scaler:
+            self.scaler.scale(total_loss).backward()
+            self.scaler.step(optimizer)
+            self.scaler.update()
+        else:
+            total_loss.backward()
+            optimizer.step()
 
         return total_loss.item(), kd_loss.item(), feat_loss.item()
 
@@ -292,12 +303,14 @@ class DistillationTrainer:
             # 保存最佳
             if val_f1 > best_f1:
                 best_f1 = val_f1
-                torch.save(self.student.state_dict(), self.cfg["distilled_ckpt"])
+                save_model = self.student.module if isinstance(self.student, nn.DataParallel) else self.student
+                torch.save(save_model.state_dict(), self.cfg["distilled_ckpt"])
                 print(f"  ✓ Best distilled student saved! F1={best_f1:.4f}")
 
             # 每 epoch 周期备份（保留最近 20 个）
             ckpt_path = os.path.join(ckpt_dir, f"distill_epoch_{global_epoch:02d}.pth")
-            torch.save(self.student.state_dict(), ckpt_path)
+            save_model = self.student.module if isinstance(self.student, nn.DataParallel) else self.student
+            torch.save(save_model.state_dict(), ckpt_path)
             old = os.path.join(ckpt_dir, f"distill_epoch_{global_epoch-20:02d}.pth")
             if os.path.exists(old):
                 os.remove(old)
@@ -305,7 +318,8 @@ class DistillationTrainer:
         logger.close()
 
         # 加载最佳权重
-        self.student.load_state_dict(torch.load(self.cfg["distilled_ckpt"], weights_only=False))
+        s = self.student.module if isinstance(self.student, nn.DataParallel) else self.student
+        s.load_state_dict(torch.load(self.cfg["distilled_ckpt"], weights_only=False))
         return self.student
 
     @torch.no_grad()

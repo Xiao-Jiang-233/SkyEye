@@ -29,13 +29,43 @@ def _auto_num_workers():
     """自适应 DataLoader 线程数。
 
     Windows spawn 下保守取 2（避免启动开销过大），Linux 取 CPU 核数的一半，上限 4。
-    注意：Windows 上必须通过独立 .py 脚本运行（local_train.py），且入口有
-    if __name__ == "__main__" 守卫，否则 spawn 会导致递归创建进程死锁。
     """
     cpu_count = os.cpu_count() or 4
     if sys.platform == "win32":
         return min(2, max(0, cpu_count // 2))
     return min(4, max(0, cpu_count // 2))
+
+
+def _detect_amp():
+    """自适应混合精度策略。
+
+    sm_80+ (Ampere/Hopper/Blackwell) → bfloat16，无需 GradScaler
+    sm_70-75 (Volta/Turing)        → float16 + GradScaler
+    CPU / 无 CUDA                  → 关闭 AMP
+    """
+    if not torch.cuda.is_available():
+        return {"amp_dtype": None, "use_grad_scaler": False}
+
+    cc = torch.cuda.get_device_capability()
+    sm = cc[0] * 10 + cc[1]  # e.g. (8, 9) → 89
+
+    if sm >= 80:
+        return {"amp_dtype": "bfloat16", "use_grad_scaler": False}
+    else:
+        return {"amp_dtype": "float16", "use_grad_scaler": True}
+
+
+_AMP = _detect_amp()
+
+
+def _auto_batch_size():
+    """自适应 batch_size：≈1GB 显存 → 1 样本（B4@380 训练内存）"""
+    if not torch.cuda.is_available():
+        return 4  # CPU fallback
+    vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+    bs = max(4, min(int(vram_gb), 64))
+    return bs
+
 
 CONFIG = {
     # ---- 数据 ----
@@ -67,7 +97,7 @@ CONFIG = {
     "class_names": ["cloudy", "foggy", "rainy", "snowy", "sunny", "thundery", "other"],
     "skip_classes": ["other"],
     "img_size": 380,               # EfficientNet-B4 原生分辨率
-    "batch_size": 8,              # 手动指定，8GB 显存 + B4@380 的稳妥值
+    "batch_size": _auto_batch_size(),  # 自适应：≈1GB/样本 @ B4@380
     "val_split": 0.15,             # 验证集比例
 
     # ---- 教师模型 ----
@@ -98,6 +128,8 @@ CONFIG = {
     "device": "cuda" if torch.cuda.is_available() else "cpu",
     "seed": 42,
     "fp16": True,                 # 混合精度训练（仅 CUDA 生效）
+    "amp_dtype": _AMP["amp_dtype"],           # auto: sm≥80→bfloat16, sm<80→float16
+    "use_grad_scaler": _AMP["use_grad_scaler"],  # FP16 需要 GradScaler 防 underflow
     "use_tb": True,              # TensorBoard 日志（需 pip install tensorboard）
     "num_workers": _auto_num_workers(),  # 自适应：Win→2, Linux→min(4, cpu//2)
     "scheduler": "cosine",        # cosine / plateau

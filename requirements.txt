@@ -1,13 +1,14 @@
-# SkyEye 依赖（比赛环境：GPU 训练 + CPU 推理）
+# SkyEye 依赖
+# 本地: RTX 5070 (CUDA 13.0) | 云端: V100×2 (Ubuntu 20.04, CUDA 12.4, PyTorch 2.5.1)
 # 安装: pip install -r requirements.txt
 
---extra-index-url https://download.pytorch.org/whl/cu130
+--extra-index-url https://download.pytorch.org/whl/cu124
 
-torch==2.12.0
-torchvision==0.27.0
-timm==1.0.27
-onnx==1.21.0
-onnxruntime==1.26.0
+torch>=2.5.1
+torchvision>=0.20.1
+timm>=1.0.27
+onnx>=1.16.0
+onnxruntime>=1.20.0
 tqdm
 scikit-learn
 scipy

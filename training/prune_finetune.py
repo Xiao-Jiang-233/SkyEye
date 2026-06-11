@@ -131,16 +131,27 @@ def finetune_after_prune(model, train_loader, val_loader, class_counts, class_na
     ckpt_path = f"results/student_pruned_{tag}.pth" if tag else "results/student_pruned_temp.pth"
     best_f1 = 0.0
 
+    # 自适应 AMP
+    use_amp = cfg["fp16"] and torch.cuda.is_available()
+    amp_dtype = getattr(torch, cfg.get("amp_dtype", "float16")) if use_amp else None
+    use_grad_scaler = cfg.get("use_grad_scaler", False) and use_amp
+    scaler = torch.cuda.amp.GradScaler() if use_grad_scaler else None
+
     for epoch in range(epochs):
         model.train()
         train_loss = 0.0
         for images, labels in tqdm(train_loader, desc=f"{tag} FT Epoch {epoch+1}/{epochs}"):
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
-            with autocast('cuda', dtype=torch.bfloat16, enabled=cfg["fp16"]):
+            with autocast('cuda', dtype=amp_dtype, enabled=use_amp):
                 loss = criterion(model(images), labels)
-            loss.backward()
-            optimizer.step()
+            if scaler:
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                optimizer.step()
             train_loss += loss.item()
 
         scheduler.step()

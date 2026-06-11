@@ -37,6 +37,7 @@ def run_distillation():
         num_classes=cfg["num_classes"],
         pretrained=True,  # ImageNet 预训练
     ).to(device)
+    student = torch.nn.DataParallel(student)
     print("Student model created.")
 
     # 3) 数据加载

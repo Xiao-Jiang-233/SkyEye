@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch
+import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.amp import autocast
@@ -56,6 +57,7 @@ def continue_teacher(checkpoint_path, extra_epochs=5, lr=5e-5, mixup_alpha=0.2):
 
     state_dict = torch.load(checkpoint_path, weights_only=True, map_location=device)
     teacher.load_state_dict(state_dict)
+    teacher = nn.DataParallel(teacher)
     print("Checkpoint loaded successfully.")
 
     # 3) 损失函数
@@ -76,13 +78,18 @@ def continue_teacher(checkpoint_path, extra_epochs=5, lr=5e-5, mixup_alpha=0.2):
     # TensorBoard
     logger = TrainLogger(log_dir="results/tb_results/teacher", use_tb=cfg["use_tb"])
 
-    # 训练配置
+    # 训练配置（自适应 AMP）
     use_amp = cfg["fp16"] and torch.cuda.is_available()
+    amp_dtype = getattr(torch, cfg.get("amp_dtype", "float16")) if use_amp else None
+    use_grad_scaler = cfg.get("use_grad_scaler", False) and use_amp
+    scaler = torch.cuda.amp.GradScaler() if use_grad_scaler else None
     best_f1 = 0.0
     backup_dir = cfg["teacher_ckpt_dir"]
 
-    print(f"\nLR: {cont_lr}, MixUp alpha: {mixup_alpha}")
-    print(f"BF16 AMP: {'ON' if use_amp else 'OFF'}\n")
+    amp_name = cfg.get("amp_dtype", "off").upper()
+    scaler_note = " + GradScaler" if use_grad_scaler else ""
+    print(f"\nLR: {cont_lr}, MixUp alpha: {mixup_alpha}, "
+          f"AMP: {amp_name}{scaler_note}\n")
 
     for epoch in range(extra_epochs):
         teacher.train()
@@ -96,12 +103,19 @@ def continue_teacher(checkpoint_path, extra_epochs=5, lr=5e-5, mixup_alpha=0.2):
             mixed_images, labels_a, labels_b, lam = mixup_data(images, labels, mixup_alpha)
 
             optimizer.zero_grad()
-            with autocast('cuda', dtype=torch.bfloat16, enabled=use_amp):
+            with autocast('cuda', dtype=amp_dtype, enabled=use_amp):
                 logits = teacher(mixed_images)
                 loss = lam * criterion(logits, labels_a) + (1 - lam) * criterion(logits, labels_b)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
-            optimizer.step()
+            if scaler:
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
+                optimizer.step()
 
             train_preds.extend(logits.argmax(dim=1).cpu().numpy())
             train_labels_list.extend(labels_a.cpu().numpy())
@@ -136,19 +150,22 @@ def continue_teacher(checkpoint_path, extra_epochs=5, lr=5e-5, mixup_alpha=0.2):
         if val_f1 > best_f1:
             best_f1 = val_f1
             ema.apply_shadow(teacher)
-            torch.save(teacher.state_dict(), cfg["teacher_ckpt"])
+            save_model = teacher.module if isinstance(teacher, nn.DataParallel) else teacher
+            torch.save(save_model.state_dict(), cfg["teacher_ckpt"])
             ema.restore(teacher)
             print(f"  ✓ Best teacher saved (EMA)! F1={best_f1:.4f}")
 
         ckpt_path = f"{backup_dir}/teacher_cont_{epoch:02d}.pth"
         ema.apply_shadow(teacher)
-        torch.save(teacher.state_dict(), ckpt_path)
+        save_model = teacher.module if isinstance(teacher, nn.DataParallel) else teacher
+        torch.save(save_model.state_dict(), ckpt_path)
         ema.restore(teacher)
 
     print(f"\nContinue training done. Best F1: {best_f1:.4f}")
     logger.close()
 
-    teacher.load_state_dict(torch.load(cfg["teacher_ckpt"], weights_only=True))
+    load_model = teacher.module if isinstance(teacher, nn.DataParallel) else teacher
+    load_model.load_state_dict(torch.load(cfg["teacher_ckpt"], weights_only=True))
     return teacher
 
 
