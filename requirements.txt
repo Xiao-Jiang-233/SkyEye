@@ -13,3 +13,4 @@ tqdm
 scikit-learn
 scipy
 tensorboard
+jupyterlab-language-pack-zh-CN
