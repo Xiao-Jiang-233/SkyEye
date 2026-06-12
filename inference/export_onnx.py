@@ -11,8 +11,33 @@ import onnxruntime as ort
 import numpy as np
 import time
 
+import torch.nn as nn
+
 from config import CONFIG
 from models.weather_efficientnet import WeatherEfficientNet
+
+
+class LogitBiasWrapper(nn.Module):
+    """将 logit bias 烘焙到模型图中（logits - bias），确保 ONNX 导出包含 bias 逻辑。"""
+
+    def __init__(self, model, bias):
+        super().__init__()
+        self.model = model
+        self.register_buffer('bias', bias)
+
+    def forward(self, x):
+        return self.model(x) - self.bias
+
+
+def _build_bias_tensor(class_names, cfg=None):
+    """构建 per-class logit bias 张量（与 train_teacher._build_logit_bias 等价）"""
+    bias = torch.zeros(len(class_names))
+    bias_cfg = (cfg or CONFIG).get("logit_bias", {})
+    if bias_cfg:
+        for cls_name, val in bias_cfg.items():
+            if cls_name in class_names:
+                bias[class_names.index(cls_name)] = val
+    return bias
 
 
 def export_to_onnx(model_path, onnx_path=None):
@@ -37,6 +62,12 @@ def export_to_onnx(model_path, onnx_path=None):
     ).to(device)
     model.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
     model.eval()
+
+    # 烘焙 logit bias 到模型中（确保 ONNX 输出与训练时验证行为一致）
+    bias = _build_bias_tensor(cfg["active_class_names"])
+    if bias.any():
+        model = LogitBiasWrapper(model, bias.to(device))
+        print(f"✓ Logit bias baked into ONNX model: {cfg.get('logit_bias', {})}")
 
     dummy_input = torch.randn(1, 3, cfg["img_size"], cfg["img_size"]).to(device)
 

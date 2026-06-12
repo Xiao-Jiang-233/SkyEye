@@ -413,10 +413,10 @@ def create_dataloaders(data_root=None, img_size=None, batch_size=None, num_worke
         tuple: (train_loader, val_loader, class_counts, class_names)
     """
     cfg = CONFIG
-    root = data_root or prepare_data()
-    size = img_size or cfg["img_size"]
-    bs = batch_size or cfg["batch_size"]
-    nw = num_workers or cfg["num_workers"]
+    root = data_root if data_root is not None else prepare_data()
+    size = img_size if img_size is not None else cfg["img_size"]
+    bs = batch_size if batch_size is not None else cfg["batch_size"]
+    nw = num_workers if num_workers is not None else cfg["num_workers"]
 
     # 全量加载以获取类别分布
     full_dataset = ImageFolder(root)

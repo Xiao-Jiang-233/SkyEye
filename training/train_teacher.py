@@ -234,7 +234,7 @@ def evaluate(model, loader, device, class_names=None):
         images = images.to(device)
         logits = model(images)
         if logit_bias is not None:
-            logits = logits + logit_bias.unsqueeze(0)
+            logits = logits - logit_bias.unsqueeze(0)
         preds = logits.argmax(dim=1).cpu().numpy()
         all_preds.extend(preds)
         all_labels.extend(labels.numpy())
@@ -350,7 +350,7 @@ def train_teacher():
     ema = EMA(teacher, decay=cfg.get("ema_decay", 0.999))
     logger = TrainLogger(log_dir="results/tb_results/teacher", use_tb=cfg["use_tb"])
 
-    amp_name = cfg.get("amp_dtype", "off").upper()
+    amp_name = (cfg.get("amp_dtype") or "off").upper()
     scaler_note = " + GradScaler" if use_grad_scaler else ""
     print(f"Using device: {device}")
     print(f"\n{'='*60}")
@@ -376,7 +376,7 @@ def train_teacher():
 
             # 切换 Dataloader（DRW 过采样）
             _, val_loader, class_counts, class_names = create_dataloaders(cloudy_oversample=False)
-            train_loader, _, _, _ = create_dataloaders(cloudy_oversample=True, sunny_oversample=True)
+            train_loader, _, _, _ = create_dataloaders(cloudy_oversample=False, sunny_oversample=True)
 
             # 切换 Criterion（ConfusionPenaltyLoss）
             alpha = compute_class_weights(class_counts)

@@ -94,8 +94,10 @@ CONFIG = {
         "thunderstorm": "thundery",
         "lightning": "thundery",  # 闪电
     },
-    "class_names": ["cloudy", "foggy", "rainy", "snowy", "sunny", "thundery", "other"],
+    # ImageFolder 按字母排序目录，class_names 必须与此一致，否则标签索引错位
+    "class_names": sorted(["cloudy", "foggy", "rainy", "snowy", "sunny", "thundery", "other"]),
     "skip_classes": ["other"],
+    # active_class_names = class_names - skip_classes，模型实际输出的类别（推理/偏差必须用这个）
     "img_size": 380,               # EfficientNet-B4 原生分辨率
     "batch_size": _auto_batch_size(),  # 自适应：≈1GB/样本 @ B4@380
     "val_split": 0.15,             # 验证集比例
@@ -142,9 +144,11 @@ CONFIG = {
     # ---- Logit Adjustment（方案 A）----
     # 推理时 logit bias：降低 sunny 门槛，提高 cloudy 门槛
     # bias > 0 → 更难被判为该类；bias < 0 → 更容易被判为该类
+    # bias > 0 → 更难被判为该类（penalize）；bias < 0 → 更容易（boost）
+    # 搜索最优 @ val holdout: cloudy=0.55, foggy=-0.25 (Macro F1 0.8720→0.8770, cloudy F1 0.7138→0.7199)
     "logit_bias": {
-        "sunny": -0.5,
-        "cloudy": 0.3,
+        "cloudy": 0.55,
+        "foggy": -0.25,
     },
 
     # ---- Cost-Sensitive Loss（方案 B）----
@@ -164,4 +168,8 @@ CONFIG = {
     "onnx_int8_path": "results/weather_model_int8.onnx",
 }
 
-CONFIG["num_classes"] = len(CONFIG["class_names"]) - len(CONFIG["skip_classes"])
+CONFIG["active_class_names"] = [
+    name for name in CONFIG["class_names"]
+    if name not in CONFIG["skip_classes"]
+]
+CONFIG["num_classes"] = len(CONFIG["active_class_names"])

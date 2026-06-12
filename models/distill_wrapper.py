@@ -71,9 +71,11 @@ class DistillationTrainer:
         for p in self.teacher.parameters():
             p.requires_grad = False
 
-        # 获取中间层通道信息和 block 索引
-        self.teacher_channels = teacher.get_stage_channels()
-        self.student_channels = student.get_stage_channels()
+        # 获取中间层通道信息（兼容 DataParallel 包装）
+        teacher_model = teacher.module if isinstance(teacher, nn.DataParallel) else teacher
+        student_model = student.module if isinstance(student, nn.DataParallel) else student
+        self.teacher_channels = teacher_model.get_stage_channels()
+        self.student_channels = student_model.get_stage_channels()
         self.kd_indices = self._get_kd_indices()
 
         # 选择关键 stage 用于特征蒸馏（取最后 N 个 stage）
@@ -178,7 +180,7 @@ class DistillationTrainer:
         单步蒸馏训练（自适应 AMP：bfloat16 或 float16 + GradScaler）
 
         Returns:
-            tuple: (total_loss, kd_loss, feat_loss)
+            tuple: (total_loss, kd_loss, feat_loss, preds)
         """
         images, labels = images.to(self.device), labels.to(self.device)
 
@@ -211,7 +213,8 @@ class DistillationTrainer:
             total_loss.backward()
             optimizer.step()
 
-        return total_loss.item(), kd_loss.item(), feat_loss.item()
+        preds = student_logits.detach().argmax(dim=1)
+        return total_loss.item(), kd_loss.item(), feat_loss.item(), preds
 
     def train(self, train_loader, val_loader):
         """
@@ -258,15 +261,12 @@ class DistillationTrainer:
 
             pbar = tqdm(train_loader, desc=f"KD Epoch {global_epoch}/{self.cfg['kd_epochs']}")
             for images, labels in pbar:
-                total, kd, feat = self.train_step(images, labels, optimizer)
+                total, kd, feat, preds = self.train_step(images, labels, optimizer)
                 total_loss_avg += total
 
-                # 收集训练预测（用于 train F1）
-                with torch.no_grad():
-                    images = images.to(self.device)
-                    logits = self.student(images)
-                    train_preds.extend(logits.argmax(dim=1).cpu().numpy())
-                    train_labels_list.extend(labels.cpu().numpy())
+                # 收集训练预测（train_step 中已完成前向，直接复用其 logits）
+                train_preds.extend(preds.cpu().numpy())
+                train_labels_list.extend(labels.cpu().numpy())
 
                 pbar.set_postfix({
                     "total": f"{total:.4f}",
@@ -322,14 +322,27 @@ class DistillationTrainer:
         s.load_state_dict(torch.load(self.cfg["distilled_ckpt"], weights_only=False))
         return self.student
 
+    def _build_logit_bias(self):
+        """从 config 构建 per-class logit bias 张量（方案 A）。
+        实现为 logits - bias，因此 bias > 0 → 更难被预测，bias < 0 → 更容易被预测。"""
+        bias = torch.zeros(len(self.class_names), device=self.device)
+        bias_cfg = self.cfg.get("logit_bias", {})
+        if bias_cfg:
+            for cls_name, val in bias_cfg.items():
+                if cls_name in self.class_names:
+                    bias[self.class_names.index(cls_name)] = val
+        return bias
+
     @torch.no_grad()
     def evaluate(self, loader):
         """验证，返回 (macro_f1, accuracy, per_class_f1_dict)"""
         self.student.eval()
+        logit_bias = self._build_logit_bias()
         all_preds, all_labels = [], []
         for images, labels in loader:
             images = images.to(self.device)
             logits = self.student(images)
+            logits = logits - logit_bias.unsqueeze(0)
             preds = logits.argmax(dim=1).cpu().numpy()
             all_preds.extend(preds)
             all_labels.extend(labels.numpy())
