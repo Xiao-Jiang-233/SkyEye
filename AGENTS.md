@@ -1,6 +1,7 @@
 # AGENTS.md
 
 This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 项目概述
 
@@ -8,7 +9,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 dew/rime/sandstorm 通过 `class_aliases` 映射到 `other`，暂不参与训练（补充数据集仅 ~700~1200 张，样本量不足）。
 技术方案：EfficientNet-B4（教师）→ 知识蒸馏 → EfficientNet-B0（学生）→ ONNX 导出 → INT8 量化。
 比赛约束：GPU 训练 → CPU 推理，推理总时限 70 分钟（训练本地不限时）。评分 Macro F1 × 100，同分按推理速度排名。规则详见 [docs/competition-rules.md](docs/competition-rules.md) 和 [docs/competition-faq.md](docs/competition-faq.md)。
-当前教师最优：**Macro F1 0.9015 / Acc 89.83%**（全量 60k 评估），瓶颈在 cloudy↔sunny 混淆（通过四方案改善 sunny recall 0.78→0.85，Macro F1 突破 0.9）。
+当前教师最优：**Macro F1 0.9015 / Acc 89.83%**（全量 60k 评估），瓶颈在 cloudy↔sunny 混淆。
 设计文档：[docs/design-efficientnet-kd-pruning.md](docs/design-efficientnet-kd-pruning.md)
 
 ## 开发环境
@@ -32,7 +33,8 @@ dew/rime/sandstorm 通过 `class_aliases` 映射到 `other`，暂不参与训练
 | 路径                     | 用途                                                                           |
 | ------------------------ | ------------------------------------------------------------------------------ |
 | `main.ipynb`             | Jupyter Notebook 入口，按阶段调用各 .py 模块                                   |
-| `scripts/eval_full.py`   | 全量 60k 数据集评估脚本                                                        |
+| `scripts/eval_full.py`   | 模型评估脚本（默认 holdout val，--full 切换全量）                              |
+| `scripts/search_bias.py` | Logit bias 网格搜索脚本（预计算 logits，秒级完成）                             |
 | `datasets/`              | 导入的数据集，**只读**，通过 `prepare_data()` 复制到可写目录                   |
 | `results/`               | 训练结果和模型检查点存放处                                                     |
 | `results/checkpoints/`   | 每 epoch 周期备份（保留最近 20 个，自动滚动清理）                               |
@@ -130,8 +132,14 @@ pip install -r requirements.txt
 # 单张图片推理
 python -m inference.infer <image_path>
 
-# 全量数据集评估
+# 模型评估（默认 holdout val 15%）
 python scripts/eval_full.py
+
+# 全量 60k 评估（含训练样本，仅调试）
+python scripts/eval_full.py --full
+
+# Logit bias 网格搜索（无需重新训练）
+python scripts/search_bias.py
 
 # TensorBoard 可视化
 tensorboard --logdir results/tb_results/
@@ -149,15 +157,15 @@ tensorboard --logdir results/tb_results/
 | MixUp | α=0.2 | Zhang et al. (ICLR 2018)，输入空间正则化 |
 | EMA | decay=0.99997 | 权重指数滑动平均，平滑窗口 ~33k steps |
 | BF16 AMP | autocast + clip_grad | RTX 5070 原生支持，无需 GradScaler |
-| DRW 延迟过采样 | P2 阶段 cloudy 2× + sunny 2× | LDAM (NeurIPS 2019)，先学特征再校准边界 |
+| DRW 延迟过采样 | P2 阶段 sunny 2× | LDAM (NeurIPS 2019)，先学特征再校准边界；cloudy 过采样已关闭（精度低） |
 | Per-Class Label Smoothing | sunny/cloudy ε=0.1，其他 0 | 对易混淆类用更高平滑值（方案 D） |
-| ConfusionPenaltyLoss | sunny→cloudy λ=0.3 | 对特定混淆方向施加额外惩罚（方案 B） |
-| Logit Adjustment | sunny bias=-0.5, cloudy=+0.3 | 推理时调整判定门槛（方案 A） |
+| ConfusionPenaltyLoss | sunny/rainy/foggy→cloudy λ=0.3 | 对 cloudy 收容方向施加额外惩罚（方案 B） |
+| Logit Adjustment | cloudy=+0.55, foggy=-0.25 | 推理时调整判定门槛，bias 网格搜索最优（方案 A）；公式 logits - bias |
 
 ### 已知经验
 
 - **SAM 对该任务无效**：SAM rho=0.05 导致 Macro F1 从 0.8931 跌到 0.8744，sunny recall 和 cloudy precision 双降，训练时间翻倍。已移除
-- **cloudy↔sunny 是最大混淆对**：sunny→cloudy 从 2004（20%）降至 1478（14.8%）通过四方案改善，但 cloudy→rainy 成为新的混淆热点（1700，17%）
+- **cloudy↔sunny 是最大混淆对**：sunny→cloudy 1350（13.5%），rainy→cloudy 1248（12.5%），foggy→cloudy 1231（12.3%）。cloudy 精度仅 0.6877，是核心瓶颈
 - **thundery/snowy 几乎完美**：F1 > 0.96，特征鲜明
 - **MixUp 阶段 Train F1 < Val F1 是正常现象**：因为 Train F1 在混合样本上计算但只与 labels_a 比较，不是 bug
 
@@ -175,7 +183,8 @@ tensorboard --logdir results/tb_results/
 - **Windows**：全量评估时设置 `num_workers=0`，避免 60k 图 DataLoader 共享内存耗尽
 - BF16 autocast 用于训练（RTX 5070 原生支持，无需 GradScaler）
 - TensorBoard 仅使用 SCALARS 标签页（loss/F1/Acc/per-class F1），无 GRAPHS/PROFILE/HISTOGRAMS
-- 四方案配置均在 `config.py` 中：`logit_bias`（推理门槛）、`confusion_penalty_weight`（混淆惩罚）、`per_class_label_smoothing`（按类平滑）
+- 四方案配置均在 `config.py` 中：`logit_bias`（推理门槛，最优 `cloudy=0.55, foggy=-0.25`）、`confusion_penalty_weight`（混淆惩罚，三方向 sunny/rainy/foggy→cloudy）、`per_class_label_smoothing`（按类平滑）
+- `active_class_names` = `class_names` - `skip_classes`，推理/ONNX/bias 构建必须用此而非 `class_names`（否则维度错位）
 - 教师模型最终保存到 `results/teacher_best.pth`（Phase 依赖文件在 `results/checkpoints/teacher/`）
 - **Windows**：PowerShell 命令（`Test-Path`、`Remove-Item` 等）需用 `PowerShell` 工具，不要通过 `Bash` 执行
 - **NotebookEdit**：`git checkout`/`git stash` 后需先重新 `Read` notebook，否则会报 "modified since read" 错误

@@ -49,7 +49,8 @@ CPU Inference (ONNX Runtime)
 SkyEye/
 ├── main.ipynb                     # Jupyter Notebook 入口，按顺序执行训练管线
 ├── scripts/
-│   └── eval_full.py               # 全量数据集评估
+│   ├── eval_full.py               # 模型评估（默认 holdout val）
+│   └── search_bias.py             # Logit bias 网格搜索
 ├── config.py                      # 超参数统一管理 + HF 镜像配置
 ├── data/
 │   ├── augmentations.py           # Train/Val 增强策略 (RandAugment)
