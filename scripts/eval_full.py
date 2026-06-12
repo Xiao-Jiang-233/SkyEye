@@ -4,7 +4,6 @@
     python scripts/eval_full.py                                    # 默认评估 teacher_best.pth (B4)
     python scripts/eval_full.py results/checkpoints/teacher/fast_mu_best.pth
     python scripts/eval_full.py results/student_distilled_best.pth --model efficientnet_b0
-    python scripts/eval_full.py results/student_pruned_final.pth   --model efficientnet_b0
 """
 import argparse
 import sys

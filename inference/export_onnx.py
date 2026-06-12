@@ -166,6 +166,6 @@ def benchmark_cpu(onnx_path=None, int8_path=None, warmup=20, runs=100):
 
 
 if __name__ == "__main__":
-    onnx_path = export_to_onnx(CONFIG["pruned_ckpt"])
+    onnx_path = export_to_onnx(CONFIG["distilled_ckpt"])
     int8_path = quantize_to_int8(onnx_path)
     benchmark_cpu(onnx_path, int8_path)

@@ -21,7 +21,7 @@ def load_model(model_path=None, device=None):
         tuple: (model, device)
     """
     cfg = CONFIG
-    model_path = model_path or cfg["pruned_ckpt"]
+    model_path = model_path or cfg["distilled_ckpt"]
     device = device or cfg.get("inference_device", "cpu")
 
     model = WeatherEfficientNet(

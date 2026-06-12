@@ -118,11 +118,6 @@ CONFIG = {
     "kd_epochs": 15,                     # 知识蒸馏轮数
     "kd_lr": 1e-3,
 
-    # ---- 结构化剪枝（可选，仅速度需要时启用）----
-    "prune_ratio": 0.4,           # 最终剪枝比例
-    "prune_iterations": 2,        # 渐进剪枝轮数（2轮: 20%→40%）
-    "prune_finetune_epochs": 5,   # 剪枝后微调轮数
-    "prune_finetune_lr": 1e-4,
 
     # ---- 通用 ----
     "device": "cuda" if torch.cuda.is_available() else "cpu",
@@ -165,7 +160,6 @@ CONFIG = {
     "teacher_ckpt": "results/teacher_best.pth",
     "distill_ckpt_dir": "results/checkpoints/distill",
     "distilled_ckpt": "results/student_distilled_best.pth",
-    "pruned_ckpt": "results/student_pruned_final.pth",
     "onnx_path": "results/weather_model.onnx",
     "onnx_int8_path": "results/weather_model_int8.onnx",
 }
