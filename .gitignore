@@ -15,5 +15,9 @@ core.*
 # 模型权重
 *.pth
 
+# 搜索结果和日志
+results/bias_search_*.json
+results/bias_search_*.txt
+
 # TensorBoard 事件文件
 results/tb_results/*/
