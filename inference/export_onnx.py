@@ -5,6 +5,8 @@ ONNX 模型导出 + INT8 量化 + CPU 推理测速
 流程：PyTorch → ONNX FP32 → INT8 动态量化 → CPU Benchmark
 输出：results/weather_model.onnx, results/weather_model_int8.onnx
 """
+import os
+
 import torch
 import onnx
 import onnxruntime as ort
@@ -54,13 +56,19 @@ def export_to_onnx(model_path, onnx_path=None):
     cfg = CONFIG
     device = torch.device("cpu")  # 导出时用 CPU，避免 CUDA 图捕获问题
     onnx_path = onnx_path or cfg["onnx_path"]
+    if not os.path.isfile(model_path):
+        raise FileNotFoundError(f"待导出的模型权重不存在: {model_path}")
 
     model = WeatherEfficientNet(
         model_name=cfg["student_model"],
         num_classes=cfg["num_classes"],
         pretrained=False,
     ).to(device)
-    model.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
+    model.load_state_dict(torch.load(
+        model_path,
+        map_location=device,
+        weights_only=True,
+    ))
     model.eval()
 
     # 烘焙 logit bias 到模型中（确保 ONNX 输出与训练时验证行为一致）

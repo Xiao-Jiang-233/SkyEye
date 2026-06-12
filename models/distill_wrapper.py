@@ -18,6 +18,7 @@ from tqdm import tqdm
 from sklearn.metrics import f1_score
 
 from config import CONFIG
+from utils.checkpoint import atomic_save_state_dict, unwrap_model
 from utils.logger import TrainLogger
 
 
@@ -303,14 +304,12 @@ class DistillationTrainer:
             # 保存最佳
             if val_f1 > best_f1:
                 best_f1 = val_f1
-                save_model = self.student.module if isinstance(self.student, nn.DataParallel) else self.student
-                torch.save(save_model.state_dict(), self.cfg["distilled_ckpt"])
+                atomic_save_state_dict(self.student, self.cfg["distilled_ckpt"])
                 print(f"  ✓ Best distilled student saved! F1={best_f1:.4f}")
 
             # 每 epoch 周期备份（保留最近 20 个）
             ckpt_path = os.path.join(ckpt_dir, f"distill_epoch_{global_epoch:02d}.pth")
-            save_model = self.student.module if isinstance(self.student, nn.DataParallel) else self.student
-            torch.save(save_model.state_dict(), ckpt_path)
+            atomic_save_state_dict(self.student, ckpt_path)
             old = os.path.join(ckpt_dir, f"distill_epoch_{global_epoch-20:02d}.pth")
             if os.path.exists(old):
                 os.remove(old)
@@ -318,8 +317,12 @@ class DistillationTrainer:
         logger.close()
 
         # 加载最佳权重
-        s = self.student.module if isinstance(self.student, nn.DataParallel) else self.student
-        s.load_state_dict(torch.load(self.cfg["distilled_ckpt"], weights_only=False))
+        s = unwrap_model(self.student)
+        s.load_state_dict(torch.load(
+            self.cfg["distilled_ckpt"],
+            map_location=self.device,
+            weights_only=True,
+        ))
         return self.student
 
     def _build_logit_bias(self):

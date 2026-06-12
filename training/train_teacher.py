@@ -23,6 +23,7 @@ from tqdm import tqdm
 from config import CONFIG
 from models.weather_efficientnet import WeatherEfficientNet
 from data.dataset import create_dataloaders, compute_class_weights
+from utils.checkpoint import atomic_save_state_dict, unwrap_model
 from utils.logger import TrainLogger
 
 
@@ -262,20 +263,22 @@ def _get_phase_paths(cfg):
 
 def _unwrap(model):
     """DataParallel 解包：返回底层模型（非 DP 时返回自身）"""
-    return model.module if isinstance(model, nn.DataParallel) else model
+    return unwrap_model(model)
 
 
 def _save_state(model, path):
     """保存模型 state_dict（自动处理 DataParallel 解包）"""
-    torch.save(_unwrap(model).state_dict(), path)
+    atomic_save_state_dict(model, path)
 
 
 def _save_epoch_ckpt(model, ema, ckpt_dir, global_epoch):
     """保存 per-epoch EMA checkpoint（自动清理 20 轮前的旧文件）"""
     path = os.path.join(ckpt_dir, f"teacher_epoch_{global_epoch:02d}.pth")
     ema.apply_shadow(model)
-    _save_state(model, path)
-    ema.restore(model)
+    try:
+        _save_state(model, path)
+    finally:
+        ema.restore(model)
     old = os.path.join(ckpt_dir, f"teacher_epoch_{global_epoch-20:02d}.pth")
     if os.path.exists(old):
         os.remove(old)
@@ -284,8 +287,10 @@ def _save_epoch_ckpt(model, ema, ckpt_dir, global_epoch):
 def _save_best(model, ema, path, best_f1):
     """保存最佳 EMA checkpoint"""
     ema.apply_shadow(model)
-    _save_state(model, path)
-    ema.restore(model)
+    try:
+        _save_state(model, path)
+    finally:
+        ema.restore(model)
     print(f"  ✓ Best saved! F1={best_f1:.4f} → {os.path.basename(path)}")
 
 
@@ -300,8 +305,9 @@ def _create_model(cfg, device, checkpoint_path=None):
         teacher.load_state_dict(torch.load(checkpoint_path, weights_only=True, map_location=device))
         print(f"Loaded: {checkpoint_path}")
 
-    # DataParallel（单卡自动退化为普通模式）
-    teacher = nn.DataParallel(teacher)
+    if device.type == "cuda" and torch.cuda.device_count() > 1:
+        print(f"启用 DataParallel: {torch.cuda.device_count()} 张 GPU")
+        teacher = nn.DataParallel(teacher)
     return teacher
 
 
@@ -372,7 +378,11 @@ def train_teacher():
             print(f"{'='*60}")
 
             # 加载 Phase 1 best
-            _unwrap(teacher).load_state_dict(torch.load(phase1_best, weights_only=False))
+            _unwrap(teacher).load_state_dict(torch.load(
+                phase1_best,
+                map_location=device,
+                weights_only=True,
+            ))
 
             # 切换 Dataloader（DRW 过采样）
             _, val_loader, class_counts, class_names = create_dataloaders(cloudy_oversample=False)
@@ -481,7 +491,11 @@ def train_teacher():
     print(f"\nPhase 2 done. Best F1: {best_f1:.4f}")
     logger.close()
 
-    _unwrap(teacher).load_state_dict(torch.load(cfg["teacher_ckpt"], weights_only=False))
+    _unwrap(teacher).load_state_dict(torch.load(
+        cfg["teacher_ckpt"],
+        map_location=device,
+        weights_only=True,
+    ))
     print(f"\n{'='*60}")
     print(f"✓ 教师训练完成 — Best F1: {best_f1:.4f}")
     print(f"{'='*60}")

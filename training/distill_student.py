@@ -5,6 +5,8 @@
 流程：加载 Teacher → 创建 Student → 初始化 DistillationTrainer → 训练
 输出：results/student_distilled_best.pth
 """
+import os
+
 import torch
 
 from config import CONFIG
@@ -26,7 +28,15 @@ def run_distillation():
         num_classes=cfg["num_classes"],
         pretrained=False,  # 使用自己训练的权重
     ).to(device)
-    teacher.load_state_dict(torch.load(cfg["teacher_ckpt"], weights_only=False))
+    if not os.path.isfile(cfg["teacher_ckpt"]):
+        raise FileNotFoundError(
+            f"教师模型不存在: {cfg['teacher_ckpt']}，请先完成教师训练"
+        )
+    teacher.load_state_dict(torch.load(
+        cfg["teacher_ckpt"],
+        map_location=device,
+        weights_only=True,
+    ))
     teacher.eval()
     print("Teacher model loaded and frozen.")
 
@@ -37,7 +47,9 @@ def run_distillation():
         num_classes=cfg["num_classes"],
         pretrained=True,  # ImageNet 预训练
     ).to(device)
-    student = torch.nn.DataParallel(student)
+    if device.type == "cuda" and torch.cuda.device_count() > 1:
+        print(f"启用 DataParallel: {torch.cuda.device_count()} 张 GPU")
+        student = torch.nn.DataParallel(student)
     print("Student model created.")
 
     # 3) 数据加载

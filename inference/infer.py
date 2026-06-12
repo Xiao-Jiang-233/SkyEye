@@ -139,13 +139,17 @@ def load_model(model_path=None, device=None):
     from models.weather_efficientnet import WeatherEfficientNet
 
     model_path = model_path or cfg["distilled_ckpt"]
+    if not os.path.isfile(model_path):
+        raise FileNotFoundError(
+            f"未找到可用 ONNX 模型或 PyTorch 权重: {model_path}"
+        )
     model = WeatherEfficientNet(
         model_name=cfg["student_model"],
         num_classes=cfg["num_classes"],
         pretrained=False,
     )
     model.load_state_dict(torch.load(
-        model_path, map_location=device, weights_only=False))
+        model_path, map_location=device, weights_only=True))
     model.to(device)
     model.eval()
 
